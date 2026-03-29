@@ -9,6 +9,21 @@ import (
 	"strings"
 )
 
+// FormatPodkop converts VLESS proxies to uci shell commands for podkop OpenWrt package.
+func FormatPodkop(proxies []VLESSProxy, section string) (string, error) {
+	var lines []string
+	lines = append(lines, fmt.Sprintf("uci del podkop.%s.urltest_proxy_links", section))
+	for _, p := range proxies {
+		uri, err := ToVLESSURI(p.Outbound, p.Remarks)
+		if err != nil {
+			return "", fmt.Errorf("convert proxy to URI: %w", err)
+		}
+		lines = append(lines, fmt.Sprintf("uci add_list podkop.%s.urltest_proxy_links='%s'", section, uri))
+	}
+	lines = append(lines, "service podkop restart")
+	return strings.Join(lines, "\n"), nil
+}
+
 // ExtractVLESSOutbounds filters outbounds by tag "proxy" or protocol "vless" and returns them as VLESSProxy values.
 func ExtractVLESSOutbounds(subs []Subscription) []VLESSProxy {
 	var proxies []VLESSProxy

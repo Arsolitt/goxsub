@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,22 +11,32 @@ import (
 	"github.com/Arsolitt/goxsub/xray"
 )
 
-const expectedArgs = 2
-
 func main() {
 	os.Exit(run())
 }
 
 func run() int {
-	if len(os.Args) != expectedArgs {
-		fmt.Fprintf(os.Stderr, "usage: goxsub <subscription-url>\n")
+	format := flag.String("format", "uri", "output format: uri, podkop")
+	podkopSection := flag.String("podkop-section", "main", "podkop uci section name")
+	flag.Parse()
+
+	if *format != "podkop" && flag.Lookup("podkop-section").DefValue != *podkopSection {
+		fmt.Fprintf(os.Stderr, "error: --podkop-section can only be used with --format podkop\n")
 		return 1
 	}
 
-	req, err := http.NewRequestWithContext( //nolint:gosec // G704: CLI tool intentionally fetches user-provided URL
+	args := flag.Args()
+	if len(args) != 1 {
+		fmt.Fprintf(os.Stderr, "usage: goxsub [flags] <subscription-url>\n")
+		fmt.Fprintf(os.Stderr, "flags:\n")
+		flag.PrintDefaults()
+		return 1
+	}
+
+	req, err := http.NewRequestWithContext(
 		context.Background(),
 		http.MethodGet,
-		os.Args[1],
+		args[0],
 		nil,
 	)
 	if err != nil {
@@ -33,7 +44,7 @@ func run() int {
 		return 1
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: CLI tool intentionally fetches user-provided URL
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
@@ -58,13 +69,24 @@ func run() int {
 	}
 
 	proxies := xray.ExtractVLESSOutbounds(subs)
-	for _, p := range proxies {
-		uri, err := xray.ToVLESSURI(p.Outbound, p.Remarks)
+
+	switch *format {
+	case "podkop":
+		output, err := xray.FormatPodkop(proxies, *podkopSection)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			return 1
 		}
-		fmt.Println(uri)
+		fmt.Println(output)
+	default:
+		for _, p := range proxies {
+			uri, err := xray.ToVLESSURI(p.Outbound, p.Remarks)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return 1
+			}
+			fmt.Println(uri)
+		}
 	}
 
 	return 0

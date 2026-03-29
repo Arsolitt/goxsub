@@ -1,6 +1,9 @@
 package xray
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestExtractVLESSOutbounds(t *testing.T) {
 	subs := []Subscription{
@@ -367,6 +370,119 @@ func TestExtractVLESSOutbounds_NoMatches(t *testing.T) {
 	proxies := ExtractVLESSOutbounds(subs)
 	if len(proxies) != 0 {
 		t.Errorf("expected 0 proxies, got %d", len(proxies))
+	}
+}
+
+func TestFormatPodkop(t *testing.T) {
+	proxies := []VLESSProxy{
+		{
+			Remarks: "Server A",
+			Outbound: Outbound{
+				Protocol: "vless",
+				Settings: OutboundSettings{
+					Vnext: []VNext{{
+						Address: "a.example.com",
+						Port:    443,
+						Users:   []User{{ID: "uuid-a", Encryption: "none"}},
+					}},
+				},
+				StreamSettings: StreamSettings{
+					Network:  "tcp",
+					Security: "none",
+				},
+			},
+		},
+		{
+			Remarks: "Server B",
+			Outbound: Outbound{
+				Protocol: "vless",
+				Settings: OutboundSettings{
+					Vnext: []VNext{{
+						Address: "b.example.com",
+						Port:    8443,
+						Users:   []User{{ID: "uuid-b", Encryption: "none"}},
+					}},
+				},
+				StreamSettings: StreamSettings{
+					Network:  "tcp",
+					Security: "none",
+				},
+			},
+		},
+	}
+
+	result, err := FormatPodkop(proxies, "main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	lines := strings.Split(result, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines, got %d", len(lines))
+	}
+	if lines[0] != "uci del podkop.main.urltest_proxy_links" {
+		t.Errorf("first line mismatch:\ngot:      %s\nexpected: uci del podkop.main.urltest_proxy_links", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "uci add_list podkop.main.urltest_proxy_links='vless://uuid-a@") {
+		t.Errorf("second line mismatch:\ngot: %s", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], "uci add_list podkop.main.urltest_proxy_links='vless://uuid-b@") {
+		t.Errorf("third line mismatch:\ngot: %s", lines[2])
+	}
+	if lines[3] != "service podkop restart" {
+		t.Errorf("last line mismatch:\ngot:      %s\nexpected: service podkop restart", lines[3])
+	}
+}
+
+func TestFormatPodkop_CustomSection(t *testing.T) {
+	proxies := []VLESSProxy{
+		{
+			Remarks: "S",
+			Outbound: Outbound{
+				Protocol: "vless",
+				Settings: OutboundSettings{
+					Vnext: []VNext{{
+						Address: "c.example.com",
+						Port:    443,
+						Users:   []User{{ID: "uuid-c", Encryption: "none"}},
+					}},
+				},
+				StreamSettings: StreamSettings{
+					Network:  "tcp",
+					Security: "none",
+				},
+			},
+		},
+	}
+
+	result, err := FormatPodkop(proxies, "backup")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "uci del podkop.backup.urltest_proxy_links\nuci add_list podkop.backup.urltest_proxy_links='vless://uuid-c@c.example.com:443?type=tcp&encryption=none&security=none#S'\nservice podkop restart"
+	if result != expected {
+		t.Errorf("result mismatch:\ngot:      %s\nexpected: %s", result, expected)
+	}
+}
+
+func TestFormatPodkop_Empty(t *testing.T) {
+	result, err := FormatPodkop(nil, "main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "uci del podkop.main.urltest_proxy_links\nservice podkop restart"
+	if result != expected {
+		t.Errorf("result mismatch:\ngot:      %s\nexpected: %s", result, expected)
+	}
+}
+
+func TestFormatPodkop_InvalidProxy(t *testing.T) {
+	proxies := []VLESSProxy{
+		{Remarks: "bad", Outbound: Outbound{Protocol: "vless", Settings: OutboundSettings{}}},
+	}
+	_, err := FormatPodkop(proxies, "main")
+	if err == nil {
+		t.Fatal("expected error for invalid proxy")
 	}
 }
 
