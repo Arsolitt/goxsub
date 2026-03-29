@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Arsolitt/goxsub/xray"
+	goxsub "github.com/Arsolitt/goxsub"
 )
 
 type stringSlice []string
@@ -87,18 +87,18 @@ func run() int {
 		return 1
 	}
 
-	subs, err := xray.ParseSubscription(data)
+	subs, err := goxsub.ParseSubscription(data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
 
-	proxies := xray.ExtractVLESSOutbounds(subs)
-	proxies = xray.FilterByRemark(proxies, excludePatterns)
+	proxies := goxsub.ExtractProxies(subs)
+	proxies = goxsub.FilterByRemark(proxies, excludePatterns)
 
 	switch *format {
 	case "podkop":
-		output, err := xray.FormatPodkop(proxies, *podkopSection)
+		output, err := goxsub.Podkop(proxies, *podkopSection)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			return 1
@@ -106,7 +106,7 @@ func run() int {
 		fmt.Println(output)
 	default:
 		for _, p := range proxies {
-			uri, err := xray.ToVLESSURI(p.Outbound, p.Remarks)
+			uri, err := goxsub.ToURI(p)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return 1
