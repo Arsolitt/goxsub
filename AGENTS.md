@@ -7,16 +7,23 @@ Standard library only. No third-party dependencies. Go 1.26.
 ## Architecture
 
 ```
+api.go         Public API surface: re-exports types and functions from subpackages
 cmd/goxsub/    CLI binary: fetches subscription URL, prints vless:// URIs to stdout
-xray/          Library package (importable): types, parsing, conversion
+sub/           JSON subscription parsing and types
+proxy/         Proxy extraction and filtering
+protocol/      URI conversion (vless:// and others)
+format/        Output formatters (podkop uci commands)
 ```
 
-- `xray/types.go` — JSON models (Subscription, Outbound, StreamSettings, etc.)
-- `xray/parse.go` — `ParseSubscription([]byte) ([]Subscription, error)`
-- `xray/vless.go` — `ExtractVLESSOutbounds([]Subscription) []VLESSProxy`, `ToVLESSURI(Outbound, string) (string, error)`
+- `sub/types.go` — JSON models (Subscription, Outbound, StreamSettings, RealitySettings, etc.)
+- `sub/parse.go` — `ParseSubscription([]byte) ([]Subscription, error)`
+- `proxy/proxy.go` — `Proxy` interface, `VLESSProxy` type
+- `proxy/extract.go` — `ExtractProxies([]Subscription) []Proxy`
+- `proxy/filter.go` — `FilterByRemark([]Proxy, []string) []Proxy`
+- `protocol/vless.go` — `VLESSURI(*VLESSProxy) (string, error)`, `ToVLESSURI(Proxy) (string, error)`, `ToURI(Proxy) (string, error)`
+- `format/podkop.go` — `Podkop([]Proxy, string) (string, error)`
 
-Design spec: `docs/superpowers/specs/2026-03-29-goxsub-design.md`
-Implementation plan: `docs/superpowers/plans/2026-03-29-goxsub.md`
+`api.go` re-exports all public types and functions for convenience (`import goxsub "github.com/Arsolitt/goxsub"`).
 
 ## File Generation
 
@@ -27,7 +34,7 @@ All generated files (build artifacts, test output, coverage reports, etc.) must 
 - Build: `go build -o build/goxsub ./cmd/goxsub/`
 - Install: `go install github.com/Arsolitt/goxsub/cmd/goxsub@latest`
 - Run all tests: `go test ./...`
-- Run single test: `go test -run TestFunctionName ./internal/package`
+- Run single test: `go test -run TestFunctionName ./package/`
 - Run tests with coverage: `go test -cover ./...`
 - Lint code: `golangci-lint run`
 - Lint and auto-fix: `golangci-lint run --fix`
@@ -42,6 +49,7 @@ All generated files (build artifacts, test output, coverage reports, etc.) must 
 - No comments unless asked
 - Exported types and functions must have godoc comments (enforced by `revive`)
 - Comments must end with a period (enforced by `godot`)
+- No `sync.Mutex`/`sync.RWMutex` as embedded struct fields (enforced by `embeddedstructfieldcheck`)
 
 ### Imports
 
@@ -63,6 +71,11 @@ All generated files (build artifacts, test output, coverage reports, etc.) must 
 - Unused fields in JSON (DNS, Inbounds, Log, Routing) use `json.RawMessage`
 - No meaningless package names (`utils`, `helpers`)
 
+### Interfaces
+
+- `Proxy` interface in `proxy/proxy.go` defines protocol-agnostic proxy contract
+- Concrete types like `VLESSProxy` implement the interface; protocol packages use type assertions
+
 ### Logging
 
 - Use `log/slog` — `log` (standard) is forbidden in non-main files (enforced by `depguard`)
@@ -74,18 +87,20 @@ All generated files (build artifacts, test output, coverage reports, etc.) must 
 
 ## Testing
 
-- Tests in same package (`package xray`, not `package xray_test`)
-- Standard library assertions only (no testify)
-- Golden test data in `testdata/`
+- Tests in same package (`package sub`, not `package sub_test`)
+- Standard library assertions only (`t.Fatal`, `t.Errorf`, `t.Fatalf`) — no testify
+- Test data is inline in test functions; no `testdata/` directory currently
 - Use `t.TempDir()` instead of `os.TempDir()` in tests
-- Many linters are relaxed in `_test.go` files
+- Many linters are relaxed in `_test.go` files (bodyclose, dupl, errcheck, funlen, goconst, gosec, noctx, gocognit, nestif)
 - No `t.Helper()` required for test helpers
 
 ## Linting
 
 Config: `.golangci.yaml` (maratori golden config for golangci-lint v2.6.2, 50+ linters enabled).
 
-`nolint` directives must specify the linter name and provide a reason (except for `funlen`, `gocognit`, `golines`).
+Key thresholds: funlen 100 lines/50 statements, gocognit 20, cyclop 30.
+
+`nolint` directives must specify the linter name and provide a reason (except for `funlen`, `gocognit`, `golines` which need name but not reason).
 
 ## Commit Messages
 
