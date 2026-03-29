@@ -64,6 +64,17 @@ func TestFilterByRemark_GlobSpecials(t *testing.T) {
 	}
 }
 
+func TestFilterByRemark_GlobCharClass(t *testing.T) {
+	proxies := []VLESSProxy{makeProxy("A1"), makeProxy("B1"), makeProxy("C1")}
+	result := FilterByRemark(proxies, []string{"[AB]1"})
+	if len(result) != 1 {
+		t.Fatalf("expected 1, got %d", len(result))
+	}
+	if result[0].Remarks != "C1" {
+		t.Errorf("expected 'C1', got %q", result[0].Remarks)
+	}
+}
+
 func TestFilterByRemark_NoMatches(t *testing.T) {
 	proxies := []VLESSProxy{makeProxy("NL Server"), makeProxy("DE Server")}
 	result := FilterByRemark(proxies, []string{"*JP*"})
