@@ -1,8 +1,19 @@
+<div align="center">
+
 # goxsub
 
-Go library and CLI for parsing xray core JSON subscriptions and converting vless outbounds to vless:// URIs.
+[![Go Reference](https://pkg.go.dev/badge/github.com/Arsolitt/goxsub.svg)](https://pkg.go.dev/github.com/Arsolitt/goxsub)
+[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![No Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](https://github.com/Arsolitt/goxsub)
+[![Codecov](https://img.shields.io/codecov/c/github/Arsolitt/goxsub?token=YOUR_CODECOV_TOKEN&logo=codecov&logoColor=white)](https://codecov.io/gh/Arsolitt/goxsub)
+[![golangci-lint](https://img.shields.io/badge/linting-golangci--lint-00B4D8?logo=go&logoColor=white)](https://golangci-lint.run/)
 
-Standard library only. No third-party dependencies. Go 1.26.
+**Go library and CLI for parsing xray core JSON subscriptions and converting vless outbounds to vless:// URIs.**
+
+Standard library only. No third-party dependencies.
+
+</div>
 
 ## Supported
 
