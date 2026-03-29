@@ -7,22 +7,47 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/Arsolitt/goxsub/xray"
 )
+
+type stringSlice []string
+
+func (s *stringSlice) String() string { return strings.Join(*s, ", ") }
+
+func (s *stringSlice) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
 
 func main() {
 	os.Exit(run())
 }
 
+//nolint:funlen
 func run() int {
 	format := flag.String("format", "uri", "output format: uri, podkop")
 	podkopSection := flag.String("podkop-section", "main", "podkop uci section name")
+	var excludePatterns stringSlice
+	flag.Var(
+		&excludePatterns,
+		"exclude-by-remark",
+		"exclude outbounds by remark glob pattern (case-insensitive, repeatable)",
+	)
 	flag.Parse()
 
 	if *format != "podkop" && flag.Lookup("podkop-section").DefValue != *podkopSection {
 		fmt.Fprintf(os.Stderr, "error: --podkop-section can only be used with --format podkop\n")
 		return 1
+	}
+
+	for _, p := range excludePatterns {
+		if _, err := filepath.Match(p, ""); err != nil {
+			fmt.Fprintf(os.Stderr, "error: invalid glob pattern %q: %v\n", p, err)
+			return 1
+		}
 	}
 
 	args := flag.Args()
@@ -69,6 +94,7 @@ func run() int {
 	}
 
 	proxies := xray.ExtractVLESSOutbounds(subs)
+	proxies = xray.FilterByRemark(proxies, excludePatterns)
 
 	switch *format {
 	case "podkop":
