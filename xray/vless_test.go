@@ -66,7 +66,7 @@ func TestToVLESSURI_TCPReality(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "vless://test-uuid-1234@example.com:443?type=tcp&encryption=none&security=reality&pbk=pub_key_value&fp=firefox&sni=sni.example.com&sid=abcd1234&spx=%2F&flow=xtls-rprx-vision#Test TCP Reality"
+	expected := "vless://test-uuid-1234@example.com:443?type=tcp&encryption=none&security=reality&pbk=pub_key_value&fp=firefox&sni=sni.example.com&sid=abcd1234&spx=%2F&flow=xtls-rprx-vision#Test%20TCP%20Reality"
 	if uri != expected {
 		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
@@ -96,7 +96,7 @@ func TestToVLESSURI_TCPTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "vless://uuid-tls@tls.example.com:8443?type=tcp&encryption=none&security=tls&sni=tls.example.com&alpn=h2%2Chttp%2F1.1&fp=chrome#Test TCP TLS"
+	expected := "vless://uuid-tls@tls.example.com:8443?type=tcp&encryption=none&security=tls&sni=tls.example.com&alpn=h2%2Chttp%2F1.1&fp=chrome#Test%20TCP%20TLS"
 	if uri != expected {
 		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
@@ -128,7 +128,7 @@ func TestToVLESSURI_WSTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "vless://uuid-ws@ws.example.com:443?type=ws&encryption=none&security=tls&sni=ws.example.com&path=%2Fwebsocket-path&host=ws-host.example.com#Test WS TLS"
+	expected := "vless://uuid-ws@ws.example.com:443?type=ws&encryption=none&security=tls&sni=ws.example.com&path=%2Fwebsocket-path&host=ws-host.example.com#Test%20WS%20TLS"
 	if uri != expected {
 		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
@@ -159,7 +159,7 @@ func TestToVLESSURI_GrpctLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "vless://uuid-grpc@grpc.example.com:443?type=grpc&encryption=none&security=tls&sni=grpc.example.com&serviceName=grpc-service#Test GRPC TLS"
+	expected := "vless://uuid-grpc@grpc.example.com:443?type=grpc&encryption=none&security=tls&sni=grpc.example.com&serviceName=grpc-service#Test%20GRPC%20TLS"
 	if uri != expected {
 		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
@@ -191,7 +191,7 @@ func TestToVLESSURI_H2TLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "vless://uuid-h2@h2.example.com:443?type=h2&encryption=none&security=tls&sni=h2.example.com&path=%2Fh2-path&host=h2a.example.com%2Ch2b.example.com#Test H2 TLS"
+	expected := "vless://uuid-h2@h2.example.com:443?type=h2&encryption=none&security=tls&sni=h2.example.com&path=%2Fh2-path&host=h2a.example.com%2Ch2b.example.com#Test%20H2%20TLS"
 	if uri != expected {
 		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
@@ -220,7 +220,7 @@ func TestToVLESSURI_KCPNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "vless://uuid-kcp@kcp.example.com:443?type=kcp&encryption=none&security=none&type=mykcpseed&headerType=none#Test KCP None"
+	expected := "vless://uuid-kcp@kcp.example.com:443?type=kcp&encryption=none&security=none&type=mykcpseed&headerType=none#Test%20KCP%20None"
 	if uri != expected {
 		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
@@ -245,7 +245,7 @@ func TestToVLESSURI_TCPNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "vless://uuid-plain@plain.example.com:80?type=tcp&encryption=none&security=none#Test Plain"
+	expected := "vless://uuid-plain@plain.example.com:80?type=tcp&encryption=none&security=none#Test%20Plain"
 	if uri != expected {
 		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
@@ -367,5 +367,36 @@ func TestExtractVLESSOutbounds_NoMatches(t *testing.T) {
 	proxies := ExtractVLESSOutbounds(subs)
 	if len(proxies) != 0 {
 		t.Errorf("expected 0 proxies, got %d", len(proxies))
+	}
+}
+
+func TestToVLESSURI_RealityEncodedPublicKey(t *testing.T) {
+	ob := Outbound{
+		Protocol: "vless",
+		Settings: OutboundSettings{
+			Vnext: []VNext{{
+				Address: "example.com",
+				Port:    443,
+				Users:   []User{{ID: "uuid", Encryption: "none"}},
+			}},
+		},
+		StreamSettings: StreamSettings{
+			Network:  "tcp",
+			Security: "reality",
+			RealitySettings: &RealitySettings{
+				PublicKey:   "abc123+def/ghi=",
+				Fingerprint: "chrome",
+				ServerName:  "sni.com",
+				ShortID:     "abcd",
+			},
+		},
+	}
+	uri, err := ToVLESSURI(ob, "Encoded PBK")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "vless://uuid@example.com:443?type=tcp&encryption=none&security=reality&pbk=abc123%2Bdef%2Fghi%3D&fp=chrome&sni=sni.com&sid=abcd#Encoded%20PBK"
+	if uri != expected {
+		t.Errorf("URI mismatch:\ngot:      %s\nexpected: %s", uri, expected)
 	}
 }

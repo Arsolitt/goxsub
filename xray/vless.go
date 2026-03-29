@@ -44,17 +44,17 @@ func ToVLESSURI(o Outbound, remarks string) (string, error) {
 	ss := o.StreamSettings
 
 	var params []string
-	params = append(params, "type="+ss.Network)
-	params = append(params, "encryption="+user.Encryption)
-	params = append(params, "security="+ss.Security)
+	params = append(params, "type="+url.QueryEscape(ss.Network))
+	params = append(params, "encryption="+url.QueryEscape(user.Encryption))
+	params = append(params, "security="+url.QueryEscape(ss.Security))
 
 	switch ss.Security {
 	case "reality":
 		if ss.RealitySettings != nil {
-			params = append(params, "pbk="+ss.RealitySettings.PublicKey)
-			params = append(params, "fp="+ss.RealitySettings.Fingerprint)
-			params = append(params, "sni="+ss.RealitySettings.ServerName)
-			params = append(params, "sid="+ss.RealitySettings.ShortID)
+			params = append(params, "pbk="+url.QueryEscape(ss.RealitySettings.PublicKey))
+			params = append(params, "fp="+url.QueryEscape(ss.RealitySettings.Fingerprint))
+			params = append(params, "sni="+url.QueryEscape(ss.RealitySettings.ServerName))
+			params = append(params, "sid="+url.QueryEscape(ss.RealitySettings.ShortID))
 			if ss.RealitySettings.SpiderX != "" {
 				params = append(params, "spx="+url.QueryEscape(ss.RealitySettings.SpiderX))
 			}
@@ -62,13 +62,13 @@ func ToVLESSURI(o Outbound, remarks string) (string, error) {
 	case "tls":
 		if ss.TLSSettings != nil {
 			if ss.TLSSettings.ServerName != "" {
-				params = append(params, "sni="+ss.TLSSettings.ServerName)
+				params = append(params, "sni="+url.QueryEscape(ss.TLSSettings.ServerName))
 			}
 			if len(ss.TLSSettings.ALPN) > 0 {
 				params = append(params, "alpn="+url.QueryEscape(strings.Join(ss.TLSSettings.ALPN, ",")))
 			}
 			if ss.TLSSettings.Fingerprint != "" {
-				params = append(params, "fp="+ss.TLSSettings.Fingerprint)
+				params = append(params, "fp="+url.QueryEscape(ss.TLSSettings.Fingerprint))
 			}
 		}
 	}
@@ -80,12 +80,12 @@ func ToVLESSURI(o Outbound, remarks string) (string, error) {
 				params = append(params, "path="+url.QueryEscape(ss.WSSettings.Path))
 			}
 			if ss.WSSettings.Host != "" {
-				params = append(params, "host="+ss.WSSettings.Host)
+				params = append(params, "host="+url.QueryEscape(ss.WSSettings.Host))
 			}
 		}
 	case "grpc":
 		if ss.GRPCSettings != nil && ss.GRPCSettings.ServiceName != "" {
-			params = append(params, "serviceName="+ss.GRPCSettings.ServiceName)
+			params = append(params, "serviceName="+url.QueryEscape(ss.GRPCSettings.ServiceName))
 		}
 	case "h2":
 		if ss.HTTPSettings != nil {
@@ -102,18 +102,18 @@ func ToVLESSURI(o Outbound, remarks string) (string, error) {
 				params = append(params, "type="+url.QueryEscape(ss.KCPSettings.Seed))
 			}
 			if ss.KCPSettings.HeaderType != nil && ss.KCPSettings.HeaderType.Type != "" {
-				params = append(params, "headerType="+ss.KCPSettings.HeaderType.Type)
+				params = append(params, "headerType="+url.QueryEscape(ss.KCPSettings.HeaderType.Type))
 			}
 		}
 	}
 
 	if user.Flow != "" {
-		params = append(params, "flow="+user.Flow)
+		params = append(params, "flow="+url.QueryEscape(user.Flow))
 	}
 
 	fragment := ""
 	if remarks != "" {
-		fragment = "#" + remarks
+		fragment = "#" + url.PathEscape(remarks)
 	}
 
 	return fmt.Sprintf("vless://%s@%s?%s%s",
