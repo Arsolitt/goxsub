@@ -1,0 +1,45 @@
+# Release Please automation for goxsub
+#
+# This workflow:
+#   1. Creates release PRs based on conventional commits
+#   2. Updates CHANGELOG.md automatically
+#   3. Creates GitHub releases when PRs are merged
+#
+# Commit message format:
+#   feat: add new feature        -> minor version bump
+#   fix: fix a bug               -> patch version bump
+#   feat!: breaking change       -> major version bump
+#   fix(deps): update dependency -> patch version bump
+
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          release-type: go
+          token: ${{ secrets.RELEASE_TOKEN }}
