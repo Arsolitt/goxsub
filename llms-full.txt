@@ -5,79 +5,89 @@ url: /overview
 
 ## What is goxsub
 
-goxsub is a Go library and command-line tool for parsing Xray-core JSON subscription feeds and extracting proxy configurations as `vless://` URIs. Xray-core subscriptions are JSON arrays of outbound proxy configurations used by Xray, V2Ray, and compatible clients. goxsub reads these JSON structures and converts the proxy details into standardized, shareable URI format.
+goxsub is a Go library and CLI tool for parsing Xray-core JSON subscriptions and converting VLESS proxy outbounds into portable, interoperable formats. It reads the raw JSON subscription data that Xray-core clients consume and transforms it into vless:// URIs, sing-box outbound JSON objects, or podkop OpenWrt UCI commands.
 
-## What problem it solves
+The library is a single import with zero third-party dependencies — it uses only the Go standard library and targets Go 1.26+.
 
-Xray-core subscription URLs return JSON that is only directly consumable by Xray-core itself. If you need to import proxy configurations into other tools, share individual proxy URIs, or generate configuration snippets for platforms like OpenWrt, you need to convert that JSON into a more portable format. goxsub handles this conversion — it takes raw JSON subscription bytes and produces `vless://` URIs or platform-specific configuration commands.
+## What Problem It Solves
 
-## Key features
+Xray-core subscription endpoints serve JSON configurations that are directly consumable only by Xray-core itself. If you want to use the same proxy list with other tools — sing-box, podkop on OpenWrt, or any application that accepts vless:// URIs — you need to convert the format. goxsub bridges that gap by parsing the Xray-core JSON and re-encoding it into the target format.
 
-- **Zero dependencies** — standard library only, no third-party packages
-- **VLESS protocol support** — full parsing of VLESS outbound configurations
-- **REALITY and TLS security** — supports REALITY settings (short IDs, public keys, fingerprints) and TLS with SNI
-- **Multiple transports** — TCP, WebSocket, gRPC, HTTP/2, and mKCP transport protocols
-- **Glob-based remark filtering** — filter proxies by their remark names using shell-style glob patterns
-- **Podkop OpenWrt output** — generate UCI configuration commands for the podkop package on OpenWrt routers
+Without goxsub, you would need to manually extract server addresses, ports, UUIDs, stream settings, and security parameters from deeply nested JSON structures and assemble URIs or configuration snippets by hand. goxsub automates this entire pipeline.
+
+## Key Features
+
+- **Zero dependencies.** Standard library only. No runtime or build-time third-party packages.
+- **VLESS protocol support.** Parses and converts VLESS proxy outbounds including all transport and security options.
+- **REALITY and TLS security.** Full support for REALITY settings (public key, fingerprint, short ID, SNI, spiderX) and standard TLS settings (SNI, ALPN, fingerprint).
+- **Multiple transports.** TCP (with header obfuscation), WebSocket, gRPC, HTTP/2, and mKCP.
+- **Glob-based remark filtering.** Exclude proxies by remark using shell glob patterns (case-insensitive), repeatable on the CLI.
+- **Podkop output.** Generates UCI shell commands for the podkop OpenWrt package to configure proxy lists.
+- **Sing-box output.** Generates sing-box outbound JSON objects with configurable tag prefixes, suffixes, and DNS resolver settings.
+- **Single-import API.** Import `goxsub "github.com/Arsolitt/goxsub"` to access all types and functions — no need to import sub-packages directly.
 
 ## Architecture
 
-goxsub is organized into five packages with a clear data flow:
+The data flows through goxsub in a clean linear pipeline:
 
 ```
 JSON bytes
   → sub.ParseSubscription()
   → proxy.ExtractProxies()
   → proxy.FilterByRemark()
-  → protocol.ToURI() or format.Podkop()
+  → protocol.ToURI() / format.Podkop() / format.Singbox()
   → output
 ```
 
-### Package: `sub`
+1. **Parse.** Raw JSON bytes (fetched from a subscription URL) are parsed into typed `Subscription` structs by `sub.ParseSubscription`.
+2. **Extract.** `proxy.ExtractProxies` iterates over all outbounds in all subscriptions and extracts those matching the VLESS protocol or "proxy" tag into `VLESSProxy` values implementing the `Proxy` interface.
+3. **Filter.** `proxy.FilterByRemark` removes proxies whose remarks match any of the provided glob patterns. This step is optional — pass an empty slice to keep all proxies.
+4. **Convert.** The filtered proxy list is converted to the desired output format:
+   - `protocol.ToURI` — produces vless:// URI strings, one per proxy.
+   - `format.Podkop` — produces UCI shell commands for podkop on OpenWrt.
+   - `format.Singbox` — produces sing-box outbound JSON object strings.
 
-Handles JSON subscription parsing. Defines the data models that mirror the Xray-core JSON structure, including `Subscription`, `Outbound`, `StreamSettings`, `RealitySettings`, and other types. The `ParseSubscription` function accepts raw JSON bytes and returns a slice of `Subscription` values.
+## Package Descriptions
 
-### Package: `proxy`
+| Package | Path | Purpose |
+|---------|------|---------|
+| `sub` | `sub/` | JSON subscription parsing and type definitions. Contains `ParseSubscription` and all struct types (`Subscription`, `Outbound`, `StreamSettings`, `RealitySettings`, etc.). |
+| `proxy` | `proxy/` | Proxy extraction, filtering, and the core `Proxy` interface. `ExtractProxies` extracts VLESS outbounds into `VLESSProxy` values. `FilterByRemark` filters by glob pattern. |
+| `protocol` | `protocol/` | URI conversion functions. `ToURI` dispatches by protocol. `ToVLESSURI` and `VLESSURI` convert a `VLESSProxy` to a `vless://` URI string with all transport and security parameters. |
+| `format` | `format/` | Output formatters. `Podkop` generates UCI commands for the podkop OpenWrt package. `Singbox` generates sing-box outbound JSON objects with configurable tagging and DNS resolver. |
+| `cmd/goxsub` | `cmd/goxsub/` | CLI binary. Fetches a subscription URL via HTTP, parses, filters, and prints the result in the selected format to stdout. |
 
-Defines the `Proxy` interface that provides a protocol-agnostic contract for proxy configurations. The `VLESSProxy` type implements this interface. `ExtractProxies` iterates over parsed subscriptions and collects all VLESS outbounds as `Proxy` values. `FilterByRemark` filters proxies by their remark names using glob pattern matching.
+The root `api.go` re-exports all public types and functions so that consumers only need a single import:
 
-### Package: `protocol`
+```go
+goxsub "github.com/Arsolitt/goxsub"
+```
 
-Converts `Proxy` values into protocol-specific URIs. The primary function is `ToURI`, which accepts any `Proxy` and returns the corresponding URI string. For VLESS proxies, this produces `vless://` URIs containing all necessary connection parameters.
+This gives access to `goxsub.ParseSubscription`, `goxsub.ExtractProxies`, `goxsub.FilterByRemark`, `goxsub.ToURI`, `goxsub.Podkop`, `goxsub.Singbox`, and all the types like `goxsub.Subscription`, `goxsub.VLESSProxy`, `goxsub.SingboxConfig`, etc.
 
-### Package: `format`
-
-Provides output formatters beyond raw URIs. The `Podkop` function generates UCI shell commands for configuring the podkop package on OpenWrt routers, mapping proxy settings to podkop's expected configuration format.
-
-### Package: `cmd/goxsub`
-
-The CLI binary. Fetches a subscription URL via HTTP, parses the JSON, extracts and optionally filters proxies, and prints the results to stdout.
-
-## Supported protocols
+## Supported Protocols
 
 | Protocol | Status |
 |----------|--------|
-| VLESS    | Supported |
+| VLESS | Supported |
 
-goxsub currently supports VLESS only. Other protocols may be added in the future.
+## Supported Transports
 
-## Supported transports
+| Transport | Network Value | Description |
+|-----------|--------------|-------------|
+| TCP | `tcp` | Raw TCP connection. Supports header obfuscation (e.g., `http` type) via `TCPSettings.Header.Type`. |
+| WebSocket | `ws` | WebSocket transport with configurable path and host headers. |
+| gRPC | `grpc` | gRPC transport with configurable service name via `GRPCSettings.ServiceName`. |
+| HTTP/2 | `h2` | HTTP/2 transport with configurable path and host headers via `HTTPSettings`. |
+| mKCP | `kcp` | mKCP (QUIC-based) transport with configurable seed and header type obfuscation. |
 
-| Transport | Description |
-|-----------|-------------|
-| `tcp`     | Raw TCP connection |
-| `ws`      | WebSocket |
-| `grpc`    | gRPC |
-| `h2`      | HTTP/2 |
-| `kcp`     | mKCP (UDP-based) |
+## Supported Security Types
 
-## Supported security types
-
-| Security | Description |
-|----------|-------------|
-| `none`   | No encryption |
-| `tls`    | TLS with SNI |
-| `reality` | REALITY with short ID, public key, and fingerprint |
+| Security | StreamSettings Field | Description |
+|----------|---------------------|-------------|
+| None | `security: "none"` | No encryption or TLS. Plaintext transport (not recommended for production). |
+| TLS | `tlsSettings` | Standard TLS encryption with SNI, ALPN negotiation, and optional uTLS fingerprint. |
+| REALITY | `realitySettings` | REALITY protocol — TLS with short IDs, public key authentication, fingerprint spoofing, and optional spiderX path. Provides fingerprint resistance against active probing. |
 ---
 url: /installation
 ---
@@ -85,180 +95,610 @@ url: /installation
 
 ## Prerequisites
 
-- Go 1.26 or later
+- **Go 1.26+** — goxsub requires Go 1.26 or later. Check your version:
+
+```bash
+go version
+```
+
+No other dependencies are needed. goxsub has zero third-party packages.
 
 ## Install the CLI
 
-```shell
+The fastest way to install the `goxsub` CLI binary is via `go install`:
+
+```bash
 go install github.com/Arsolitt/goxsub/cmd/goxsub@latest
 ```
 
-This installs the `goxsub` binary to your `$GOPATH/bin` directory (typically `$HOME/go/bin`). Make sure `$GOPATH/bin` is in your `$PATH`.
+This downloads, compiles, and installs the `goxsub` binary into your `GOBIN` directory (typically `$HOME/go/bin`). Make sure `$GOBIN` is in your `$PATH`.
 
-## Build from source
+## Build from Source
 
-```shell
+Clone the repository and build manually:
+
+```bash
+git clone https://github.com/Arsolitt/goxsub.git
+cd goxsub
 go build -o build/goxsub ./cmd/goxsub/
 ```
 
-This produces the binary at `build/goxsub` relative to the project root.
+The binary will be at `build/goxsub`. Run it directly:
 
-## CLI quick start
+```bash
+./build/goxsub
+```
 
-Fetch a subscription and print `vless://` URIs:
+## CLI Quick Start
 
-```shell
+The `goxsub` CLI fetches a subscription URL via HTTP, parses the JSON response, extracts VLESS proxies, and prints them in the selected format to stdout.
+
+### Basic Usage — vless:// URIs
+
+The default output format is vless:// URI, one per line:
+
+```bash
 goxsub https://example.com/subscription
 ```
 
-This fetches the JSON from the URL, parses it, extracts all VLESS proxies, and prints one `vless://` URI per line to stdout.
+Output:
 
-Print podkop UCI commands instead of URIs:
+```
+vless://uuid@server:443?type=tcp&encryption=none&security=reality&pbk=...&fp=...&sni=...&sid=...#ProxyName
+vless://uuid@server:443?type=ws&encryption=none&security=tls&path=/ws&host=example.com&sni=...#AnotherProxy
+```
 
-```shell
+### Podkop Format
+
+Generate UCI shell commands for the podkop OpenWrt package:
+
+```bash
 goxsub -format podkop https://example.com/subscription
 ```
 
-Exclude proxies matching a glob pattern:
+Output:
 
-```shell
+```
+uci del podkop.main.urltest_proxy_links
+uci add_list podkop.main.urltest_proxy_links='vless://uuid@server:443?...'
+uci add_list podkop.main.urltest_proxy_links='vless://uuid@server:443?...'
+service podkop restart
+```
+
+Use `--podkop-section` to change the UCI section name (default is `main`):
+
+```bash
+goxsub -format podkop --podkop-section custom https://example.com/subscription
+```
+
+### Sing-box Format
+
+Generate sing-box outbound JSON objects:
+
+```bash
+goxsub -format singbox https://example.com/subscription
+```
+
+Output (each line is a JSON object):
+
+```
+{"type":"vless","tag":"ProxyName","server":"server","server_port":443,"uuid":"...","flow":"xtls-rprx-vision","domain_resolver":"dns-local","tls":{"enabled":true,"server_name":"...","utls":{"enabled":true,"fingerprint":"..."},"reality":{"enabled":true,"public_key":"...","short_id":"..."}}},
+```
+
+Configure sing-box output with additional flags:
+
+```bash
+goxsub -format singbox \
+  --singbox-outbound-prefix "proxy-" \
+  --singbox-outbound-suffix "-vless" \
+  --singbox-dns-resolver "dns-remote" \
+  https://example.com/subscription
+```
+
+### Exclude Proxies by Remark
+
+Filter out proxies using glob patterns matched against their remarks (case-insensitive). The `-exclude-by-remark` flag is repeatable:
+
+```bash
 goxsub -exclude-by-remark '*Russia*' https://example.com/subscription
 ```
 
-## Library quick start
+Multiple patterns:
 
-Add goxsub to your Go module:
-
-```shell
-go get github.com/Arsolitt/goxsub
+```bash
+goxsub \
+  -exclude-by-remark '*Russia*' \
+  -exclude-by-remark '*Expired*' \
+  https://example.com/subscription
 ```
 
-Then use it in your code:
+Any proxy whose remark matches at least one pattern is excluded from the output.
+
+### Sequential Numbering
+
+By default, the original remark from the subscription is preserved in the output. To replace remarks with sequential numbers (1, 2, 3, ...) instead:
+
+```bash
+goxsub -keep-remark=false https://example.com/subscription
+```
+
+This is useful when you want clean, predictable tags or fragment identifiers instead of verbose subscription names.
+
+## Library Quick Start
+
+Use goxsub as a library in your own Go programs. Everything is accessible through a single import.
+
+### Import
+
+```go
+goxsub "github.com/Arsolitt/goxsub"
+```
+
+This single import provides access to all types and functions — `ParseSubscription`, `ExtractProxies`, `FilterByRemark`, `ToURI`, `Podkop`, `Singbox`, `VLESSProxy`, `SingboxConfig`, and more.
+
+### Full Example
 
 ```go
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 
 	goxsub "github.com/Arsolitt/goxsub"
 )
 
 func main() {
-	resp, err := http.Get("https://example.com/subscription")
+	// Step 1: Fetch the subscription JSON from a URL.
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"https://example.com/subscription",
+		nil,
+	)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		panic(fmt.Sprintf("HTTP %d", resp.StatusCode))
+	}
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
+	// Step 2: Parse the JSON into typed Subscription structs.
+	// The input must be a JSON array of subscription objects.
 	subs, err := goxsub.ParseSubscription(data)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
+	// Step 3: Extract VLESS proxy outbounds from the subscriptions.
+	// Only outbounds with protocol "vless" or tag "proxy" are extracted.
 	proxies := goxsub.ExtractProxies(subs)
+
+	// Step 4: (Optional) Filter proxies by remark using glob patterns.
+	// Matching is case-insensitive. Pass an empty slice to skip filtering.
+	proxies = goxsub.FilterByRemark(proxies, []string{"*Russia*", "*Expired*"})
+
+	// Step 5: Convert each proxy to a vless:// URI string.
 	for _, p := range proxies {
 		uri, err := goxsub.ToURI(p)
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 		fmt.Println(uri)
 	}
 }
 ```
 
-The library re-exports all public types and functions through the `api.go` entry point, so you only need a single import.
+### Using Podkop Output
+
+```go
+// Generate UCI commands for podkop on OpenWrt.
+// The section name defaults to "main" but can be any string.
+lines, err := goxsub.Podkop(proxies, "main")
+if err != nil {
+	panic(err)
+}
+for _, line := range lines {
+	fmt.Println(line)
+}
+```
+
+### Using Sing-box Output
+
+```go
+// Generate sing-box outbound JSON objects with custom configuration.
+cfg := goxsub.SingboxConfig{
+	OutboundPrefix: "proxy-",        // Prepended to each outbound tag.
+	OutboundSuffix: "-vless",        // Appended to each outbound tag.
+	DNSResolver:    "dns-local",     // The domain_resolver field value.
+	KeepRemark:     true,            // Use original remark as tag (false = sequential number).
+}
+lines, err := goxsub.Singbox(proxies, cfg)
+if err != nil {
+	panic(err)
+}
+for _, line := range lines {
+	fmt.Println(line + ",") // sing-box expects comma-separated JSON objects in an array.
+}
+```
+
+### Direct VLESS URI Conversion
+
+If you already have a `VLESSProxy` and want to convert it directly:
+
+```go
+// Type-assert to VLESSProxy for direct conversion.
+vp, ok := p.(*goxsub.VLESSProxy)
+if ok {
+	uri, err := goxsub.VLESSURI(vp)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(uri)
+}
+```
+
+Or use `ToVLESSURI` which accepts the `Proxy` interface and handles the type assertion internally:
+
+```go
+uri, err := goxsub.ToVLESSURI(p)
+if err != nil {
+	panic(err)
+}
+fmt.Println(uri)
+}
 ---
 url: /cli
 ---
 # CLI Reference
 
+The `goxsub` CLI fetches an xray-core JSON subscription URL and outputs converted proxy configurations.
+
 ## Usage
 
-```shell
+```
 goxsub [flags] <subscription-url>
 ```
 
-The subscription URL is a required positional argument. It must be an HTTP or HTTPS URL that returns a JSON array of Xray-core outbound configurations.
+The subscription URL is a positional argument (not a flag). The CLI fetches it via HTTP GET, parses the JSON response, extracts VLESS proxies, and outputs them in the selected format.
 
 ## Flags
 
 | Flag | Default | Required | Description |
 |------|---------|----------|-------------|
-| `-format` | `uri` | No | Output format: `uri` or `podkop` |
+| `-format` | `uri` | No | Output format: `uri`, `podkop`, or `singbox` |
 | `-podkop-section` | `main` | No | Podkop UCI section name (only valid with `-format podkop`) |
+| `-keep-remark` | `true` | No | Keep original remark or replace with sequential number |
+| `-singbox-dns-resolver` | `dns-local` | No | sing-box domain_resolver value (only valid with `-format singbox`) |
+| `-singbox-outbound-prefix` | `""` | No | sing-box outbound tag prefix (only valid with `-format singbox`) |
+| `-singbox-outbound-suffix` | `""` | No | sing-box outbound tag suffix (only valid with `-format singbox`) |
 | `-exclude-by-remark` | — | No | Glob pattern to exclude proxies by remark (case-insensitive, repeatable) |
 
-## Output formats
+## Output Formats
 
-### `uri` format
+### `uri` (default)
 
-Prints one `vless://` URI per line to stdout. Each URI contains all connection parameters including address, port, UUID, encryption, flow, security type, transport, and associated settings.
+Outputs one `vless://` URI per line. Each URI encodes the full proxy configuration (address, port, UUID, flow, security, transport, etc.).
 
-### `podkop` format
+```
+goxsub 'https://example.com/sub'
+```
 
-Prints UCI shell commands for the OpenWrt podkop package. The section name defaults to `main` and can be customized with `-podkop-section`.
+### `podkop`
 
-## Behavior notes
+Outputs UCI shell commands for the podkop OpenWrt package. Each command is on its own line.
 
-- If `-podkop-section` is set to a non-default value and `-format` is not `podkop`, the CLI exits with an error
-- Invalid glob patterns cause an error before fetching the URL
-- HTTP errors (non-200 status) cause an error
-- Invalid JSON or non-array JSON causes an error
-- Exit code 0 on success, 1 on any error
-- All error messages go to stderr, output goes to stdout
+```
+goxsub -format podkop 'https://example.com/sub'
+goxsub -format podkop -podkop-section custom 'https://example.com/sub'
+```
+
+### `singbox`
+
+Outputs JSON objects, one per line. Each line is a complete sing-box outbound object. In CLI output, each line has a trailing comma appended.
+
+```
+goxsub -format singbox 'https://example.com/sub'
+goxsub -format singbox -singbox-dns-resolver dns-remote 'https://example.com/sub'
+goxsub -format singbox -singbox-outbound-prefix "proxy-" 'https://example.com/sub'
+```
+
+## Behavior
+
+### Flag validation
+
+- `-podkop-section` with a non-default value requires `-format podkop`. Using it with any other format produces an error.
+- `-singbox-dns-resolver` with a non-default value, or any non-empty `-singbox-outbound-prefix`/`-singbox-outbound-suffix`, requires `-format singbox`. Using them with any other format produces an error.
+- Invalid glob patterns in `-exclude-by-remark` cause an error before the URL is fetched.
+
+### Errors
+
+- HTTP non-200 responses cause an error.
+- Invalid JSON or non-array JSON in the subscription response cause an error.
+- All errors are written to stderr. Output goes to stdout.
+- Exit code 0 on success, 1 on error.
+
+### Remark handling
+
+When `-keep-remark=false`, proxy remarks are replaced with sequential numbers starting from 1 ("1", "2", "3", ...). This affects URI output and the tag generation in sing-box output. In sing-box format, the CLI passes `KeepRemark` from the flag directly to `SingboxConfig`, so the tag generation logic in the sing-box formatter handles it.
 
 ## Examples
 
-Basic usage — print `vless://` URIs:
+Fetch and output as vless:// URIs:
 
-```shell
-goxsub https://example.com/sub
+```
+goxsub 'https://sub.example.com/api/v1/client/subscribe?token=abc'
 ```
 
-Podkop format with default section:
+Output as podkop UCI commands for a custom section:
 
-```shell
-goxsub -format podkop https://example.com/sub
+```
+goxsub -format podkop -podkop-section backup 'https://sub.example.com/api/v1/client/subscribe?token=abc'
 ```
 
-Podkop format with custom section:
+Output as sing-box outbounds with prefix and custom DNS resolver:
 
-```shell
-goxsub -format podkop -podkop-section backup https://example.com/sub
+```
+goxsub -format singbox -singbox-outbound-prefix "out-" -singbox-dns-resolver dns-remote 'https://sub.example.com/api/v1/client/subscribe?token=abc'
 ```
 
-Exclude proxies matching a single pattern:
+Exclude proxies matching a glob pattern:
 
-```shell
-goxsub -exclude-by-remark '*Russia*' https://example.com/sub
+```
+goxsub -exclude-by-remark '*expired*' -exclude-by-remark '*test*' 'https://sub.example.com/api/v1/client/subscribe?token=abc'
 ```
 
-Exclude proxies matching multiple patterns:
+Replace remarks with sequential numbers:
 
-```shell
-goxsub -exclude-by-remark '*Russia*' -exclude-by-remark '*China*' https://example.com/sub
+```
+goxsub -keep-remark=false 'https://sub.example.com/api/v1/client/subscribe?token=abc'
+```
+
+---
+url: /singbox
+---
+# sing-box Output Format
+
+The sing-box output format converts VLESS proxies to sing-box outbound JSON objects suitable for inclusion in a sing-box configuration file.
+
+## What It Does
+
+The `Singbox` function in `format/singbox.go` takes a slice of `proxy.Proxy` values and a `SingboxConfig`, and returns a slice of JSON object strings. Each proxy produces one JSON object on its own line (not wrapped in an array). Only VLESS proxies are supported; other proxy types produce an error.
+
+## CLI Usage
+
+```
+goxsub -format singbox [singbox-flags] <subscription-url>
+```
+
+sing-box-specific flags:
+
+| Flag | Description |
+|------|-------------|
+| `-singbox-dns-resolver` | Value for the `domain_resolver` field in each outbound (default: `dns-local`) |
+| `-singbox-outbound-prefix` | String prepended to each outbound tag |
+| `-singbox-outbound-suffix` | String appended to each outbound tag |
+
+Note: the `-keep-remark` flag also affects sing-box output by controlling whether tags use the original remark or a sequential number.
+
+## Library Usage
+
+```go
+import (
+    "github.com/Arsolitt/goxsub"
+    "github.com/Arsolitt/goxsub/format"
+)
+
+cfg := format.SingboxConfig{
+    OutboundPrefix: "proxy-",
+    OutboundSuffix: "",
+    DNSResolver:    "dns-local",
+    KeepRemark:     true,
+}
+lines, err := format.Singbox(proxies, cfg)
+// lines is []string, each element is a JSON object
+```
+
+## SingboxConfig
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `OutboundPrefix` | `string` | Prepended to each outbound tag |
+| `OutboundSuffix` | `string` | Appended to each outbound tag |
+| `DNSResolver` | `string` | Value written to the `domain_resolver` JSON field |
+| `KeepRemark` | `bool` | If true, the tag uses the proxy's original remark; if false, uses sequential number (1-based) |
+
+## Output Structure
+
+Each line in the output is a standalone JSON object. In CLI output, each line has a trailing comma appended (`fmt.Println(line + ",")`).
+
+## Tag Generation
+
+- `KeepRemark=true`: tag = `prefix` + proxy remark + `suffix`
+- `KeepRemark=false`: tag = `prefix` + strconv(index + 1) + `suffix`
+
+## JSON Output Fields
+
+| Field | JSON key | Type | Description |
+|-------|----------|------|-------------|
+| Type | `type` | `string` | Always `"vless"` |
+| Tag | `tag` | `string` | Generated from config and proxy |
+| Server | `server` | `string` | VNext address |
+| ServerPort | `server_port` | `int` | VNext port |
+| UUID | `uuid` | `string` | User UUID from VNext |
+| Flow | `flow` | `string` | User flow setting (omitted if empty via `omitempty`) |
+| DomainResolver | `domain_resolver` | `string` | From `SingboxConfig.DNSResolver` |
+| TLS | `tls` | `object` | TLS configuration (omitted when security is `"none"`) |
+
+## TLS Block
+
+The `tls` block is omitted entirely when the stream security is `"none"` (or any value other than `"reality"` or `"tls"`).
+
+### For REALITY (security = "reality")
+
+Both `utls` and `reality` sub-blocks are included:
+
+```json
+{
+  "tls": {
+    "enabled": true,
+    "server_name": "rbc.ru",
+    "utls": { "enabled": true, "fingerprint": "chrome" },
+    "reality": { "enabled": true, "public_key": "...", "short_id": "..." }
+  }
+}
+```
+
+### For TLS (security = "tls")
+
+The `utls` block is only included when the fingerprint is non-empty. No `reality` block:
+
+```json
+{
+  "tls": {
+    "enabled": true,
+    "server_name": "example.com",
+    "utls": { "enabled": true, "fingerprint": "chrome" }
+  }
+}
+```
+
+## Complete Examples
+
+### With REALITY
+
+```json
+{"tls":{"enabled":true,"server_name":"rbc.ru","utls":{"enabled":true,"fingerprint":"chrome"},"reality":{"enabled":true,"public_key":"...","short_id":"..."}},"type":"vless","tag":"proxy-lt-1","server":"lt-cherry-01.com","uuid":"...","flow":"xtls-rprx-vision","domain_resolver":"dns-local","server_port":8443}
+```
+
+### Without TLS (security = "none")
+
+```json
+{"type":"vless","tag":"plain","server":"a.com","uuid":"uuid","domain_resolver":"dns-local","server_port":443}
+```
+
+## Gotchas
+
+- **Transport settings are not included.** WebSocket, gRPC, HTTP/2, and KCP transport configurations from the stream settings are not mapped to the sing-box output.
+- **Only security settings are mapped.** Only `"reality"` and `"tls"` security modes produce a `tls` block. Any other security value (including `"none"`) results in no TLS block.
+- **SpiderX is not included.** The REALITY `spider_x` field from the subscription is not written to the sing-box output.
+- **ALPN is not included.** The TLS ALPN settings from the subscription are not written to the sing-box output.
+- **Only VLESS proxies are supported.** Passing a non-VLESS proxy produces an error.
+- **CLI appends trailing comma.** The `Singbox()` function returns clean JSON objects without trailing commas. The CLI adds commas when printing for convenience in pasting into a sing-box `outbounds` array.
+
+---
+url: /podkop
+---
+# Podkop Output Format
+
+The podkop output format generates UCI shell commands for the [podkop](https://github.com/kalikaneko/podkop) OpenWrt package, which manages Xray proxy configurations on OpenWrt routers.
+
+## What It Does
+
+The `Podkop` function in `format/podkop.go` takes a slice of `proxy.Proxy` values and a UCI section name, and returns a slice of shell command strings. Each proxy is converted to a `vless://` URI and wrapped in a `uci add_list` command.
+
+## Function Signature
+
+```go
+func Podkop(proxies []proxy.Proxy, section string) ([]string, error)
+```
+
+- `proxies`: slice of proxies to convert (any `Proxy` interface implementation)
+- `section`: UCI section name under `podkop.*`
+- Returns: slice of command lines, or an error if any proxy fails URI conversion
+
+## CLI Usage
+
+```
+goxsub -format podkop [flags] <subscription-url>
+```
+
+The `-podkop-section` flag controls the UCI section name (default: `main`).
+
+```
+goxsub -format podkop 'https://sub.example.com/path'
+goxsub -format podkop -podkop-section backup 'https://sub.example.com/path'
+```
+
+## Library Usage
+
+```go
+import "github.com/Arsolitt/goxsub/format"
+
+lines, err := format.Podkop(proxies, "main")
+for _, line := range lines {
+    fmt.Println(line)
+}
+```
+
+## Output Structure
+
+The output consists of three parts, in order:
+
+1. **Clear**: removes any existing proxy links from the section
+2. **Add commands**: one `uci add_list` per proxy, each containing a `vless://` URI
+3. **Restart**: restarts the podkop service to apply changes
+
+### Part 1 — Clear
+
+```
+uci del podkop.<section>.urltest_proxy_links
+```
+
+### Part 2 — Add commands (one per proxy)
+
+```
+uci add_list podkop.<section>.urltest_proxy_links='<vless:// URI>'
+```
+
+### Part 3 — Restart
+
+```
+service podkop restart
+```
+
+## Empty Input
+
+When called with zero proxies, the output still includes the clear command and the restart command, but no `add_list` lines are generated. This effectively clears all proxy links and restarts the service.
+
+## Example
+
+Given two VLESS proxies with remarks "server-1" and "server-2", calling `Podkop(proxies, "main")` produces:
+
+```
+uci del podkop.main.urltest_proxy_links
+uci add_list podkop.main.urltest_proxy_links='vless://uuid@server-1.example.com:443?security=reality&type=tcp&flow=xtls-rprx-vision&sni=rbc.ru&fp=chrome&pbk=PUBLIC_KEY&sid=SHORT_ID#server-1'
+uci add_list podkop.main.urltest_proxy_links='vless://uuid@server-2.example.com:8443?security=reality&type=tcp&flow=xtls-rprx-vision&sni=rbc.ru&fp=chrome&pbk=PUBLIC_KEY&sid=SHORT_ID#server-2'
+service podkop restart
+```
+
+These commands can be piped directly to a shell on an OpenWrt device to configure podkop:
+
+```
+goxsub -format podkop 'https://sub.example.com/path' | ssh root@router sh
 ```
 ---
 url: /api
 ---
 # Library API Reference
 
-## Import
+Import path: `goxsub "github.com/Arsolitt/goxsub"`
 
-```go
-import goxsub "github.com/Arsolitt/goxsub"
-```
-
-All types and functions are accessed via this single import. The `api.go` file re-exports types and functions from `sub/`, `proxy/`, `protocol/`, and `format/` subpackages.
+All functions and types below are re-exported from sub-packages via `api.go`.
 
 ## Functions
 
@@ -268,7 +708,7 @@ All types and functions are accessed via this single import. The `api.go` file r
 func ParseSubscription(data []byte) ([]Subscription, error)
 ```
 
-Parses a JSON byte slice into a slice of `Subscription` structs. The input must be a JSON array of subscription objects. Returns an error if the input is not valid JSON or is not a JSON array.
+Parses a JSON byte slice containing a JSON array of subscription objects. Returns an error if the input is not valid JSON or does not start with a `[` delimiter. Uses streaming decoder — does not require the entire payload to be validated before decoding begins.
 
 ### ExtractProxies
 
@@ -276,7 +716,7 @@ Parses a JSON byte slice into a slice of `Subscription` structs. The input must 
 func ExtractProxies(subs []Subscription) []Proxy
 ```
 
-Extracts proxy outbounds from subscriptions. An outbound is extracted if its `Protocol` equals `"vless"` **or** its `Tag` equals `"proxy"`. All matching outbounds are extracted. The `Remarks` field on the resulting `VLESSProxy` comes from `Subscription.Remarks` (not `Outbound.Tag`). Returns `nil` if no matches are found.
+Iterates all outbounds across all subscriptions. Extracts an outbound when `Protocol == "vless"` OR `Tag == "proxy"`. Each extracted proxy gets its `Remarks` from the parent `Subscription.Remarks`. Returns nil if no outbounds match.
 
 ### FilterByRemark
 
@@ -284,7 +724,7 @@ Extracts proxy outbounds from subscriptions. An outbound is extracted if its `Pr
 func FilterByRemark(proxies []Proxy, patterns []string) []Proxy
 ```
 
-Filters proxies by remark using glob patterns via `filepath.Match`. Matching is case-insensitive. If `patterns` is empty, the input slice is returned unchanged. Returns `nil` if all proxies are excluded or the input is `nil`.
+Excludes proxies whose `Remarks()` match any of the given glob patterns. Uses `filepath.Match` for matching. Both the pattern and the remark are lowercased before comparison (case-insensitive). Empty `patterns` or empty `proxies` → returns input unchanged. Returns nil if all proxies are excluded.
 
 ### ToURI
 
@@ -292,7 +732,7 @@ Filters proxies by remark using glob patterns via `filepath.Match`. Matching is 
 func ToURI(p Proxy) (string, error)
 ```
 
-Converts any `Proxy` to its protocol URI string. Currently only supports the `"vless"` protocol. Returns an error for unsupported protocols.
+Dispatches to `ToVLESSURI` based on `p.Protocol()`. Only supports `"vless"`. Returns `fmt.Errorf("unsupported protocol: %s", ...)` for any other protocol.
 
 ### ToVLESSURI
 
@@ -300,7 +740,7 @@ Converts any `Proxy` to its protocol URI string. Currently only supports the `"v
 func ToVLESSURI(p Proxy) (string, error)
 ```
 
-Converts a `Proxy` to a `vless://` URI string. Returns an error if the proxy is not a `*VLESSProxy`.
+Type-asserts `p` to `*VLESSProxy`. Returns `fmt.Errorf("expected VLESSProxy, got %T", ...)` if assertion fails. Delegates to `VLESSURI`.
 
 ### VLESSURI
 
@@ -308,15 +748,23 @@ Converts a `Proxy` to a `vless://` URI string. Returns an error if the proxy is 
 func VLESSURI(p *VLESSProxy) (string, error)
 ```
 
-Converts a `*VLESSProxy` directly to a `vless://` URI string.
+Direct conversion of `*VLESSProxy` to a `vless://` URI string. Validates that vnext, address, port, and user ID are present. Returns sentinel errors for each missing field.
 
 ### Podkop
 
 ```go
-func Podkop(proxies []Proxy, section string) (string, error)
+func Podkop(proxies []Proxy, section string) ([]string, error)
 ```
 
-Converts proxies to UCI shell commands for the podkop OpenWrt package. The `section` parameter specifies the UCI configuration section name.
+Converts proxies to UCI shell command lines for the podkop OpenWrt package. Returns a `[]string`, not a single string. The first line is `uci del podkop.{section}.urltest_proxy_links`, followed by one `uci add_list` line per proxy, ending with `service podkop restart`.
+
+### Singbox
+
+```go
+func Singbox(proxies []Proxy, cfg SingboxConfig) ([]string, error)
+```
+
+Converts proxies to sing-box outbound JSON object strings. Returns a `[]string` (one JSON object per proxy), not a single string. Each element is a standalone JSON object — no array wrapping, no trailing comma.
 
 ## Proxy Interface
 
@@ -328,255 +776,188 @@ type Proxy interface {
 }
 ```
 
-All protocol-specific proxy types implement this interface. The library provides `VLESSProxy` as the concrete implementation for vless outbounds.
+Protocol-agnostic contract. All concrete proxy types implement this interface.
+
+## VLESSProxy
+
+Concrete type implementing `Proxy`. Holds the raw `sub.Outbound` and a `remark` string.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| Protocol | `() string` | Returns `"vless"` |
+| Tag | `() string` | Returns `Outbound.Tag` |
+| Remarks | `() string` | Returns the remark string |
+| SetRemarks | `(r string)` | Updates the remark |
+
+## SingboxConfig
+
+| Field | Type | Description |
+|-------|------|-------------|
+| OutboundPrefix | `string` | Prepended to outbound tag |
+| OutboundSuffix | `string` | Appended to outbound tag |
+| DNSResolver | `string` | Value for `domain_resolver` field |
+| KeepRemark | `bool` | Use remark as tag (true) or sequential number (false) |
 
 ## Re-exported Types
 
-All types are type aliases re-exported from subpackages. They are accessed directly via the `goxsub` import.
+All types below are type aliases (`type X = pkg.X`):
 
 | Type | Source Package |
 |------|---------------|
-| `Subscription` | `sub` |
-| `Outbound` | `sub` |
-| `OutboundSettings` | `sub` |
-| `VNext` | `sub` |
-| `User` | `sub` |
-| `StreamSettings` | `sub` |
-| `RealitySettings` | `sub` |
-| `TLSSettings` | `sub` |
-| `TCPSettings` | `sub` |
-| `TCPHeader` | `sub` |
-| `WSSettings` | `sub` |
-| `GRPCSettings` | `sub` |
-| `HTTPSettings` | `sub` |
-| `KCPSettings` | `sub` |
-| `KCPHeader` | `sub` |
-| `Proxy` | `proxy` |
-| `VLESSProxy` | `proxy` |
+| Subscription | sub |
+| Outbound | sub |
+| OutboundSettings | sub |
+| VNext | sub |
+| User | sub |
+| StreamSettings | sub |
+| RealitySettings | sub |
+| TLSSettings | sub |
+| TCPSettings | sub |
+| TCPHeader | sub |
+| WSSettings | sub |
+| GRPCSettings | sub |
+| HTTPSettings | sub |
+| KCPSettings | sub |
+| KCPHeader | sub |
+| Proxy | proxy |
+| VLESSProxy | proxy |
 ---
 url: /json-format
 ---
 # Subscription JSON Format
 
-## Input Format
+The subscription JSON is a top-level JSON array of subscription objects. Each object contains DNS, inbounds, log, outbounds, remarks, and routing fields. Only `outbounds` and `remarks` are parsed into typed Go structs — all other top-level fields are stored as `json.RawMessage`.
 
-goxsub expects a JSON **array** of subscription objects:
+## Subscription
 
-```json
-[
-  { "remarks": "...", "outbounds": [...] },
-  { "remarks": "...", "outbounds": [...] }
-]
-```
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| DNS | `dns` | `json.RawMessage` | DNS configuration (passthrough, not parsed) |
+| Inbounds | `inbounds` | `json.RawMessage` | Inbound configurations (passthrough, not parsed) |
+| Log | `log` | `json.RawMessage` | Logging configuration (passthrough, not parsed) |
+| Outbounds | `outbounds` | `[]Outbound` | Proxy outbound configurations |
+| Remarks | `remarks` | `string` | Subscription display name |
+| Routing | `routing` | `json.RawMessage` | Routing rules (passthrough, not parsed) |
 
-Pass this array directly to `ParseSubscription`.
+## Outbound
 
-## Subscription Object
-
-> `DNS`: `json.RawMessage`
-> `Inbounds`: `json.RawMessage`
-> `Log`: `json.RawMessage`
-> `Outbounds`: `[]Outbound`
-> `Remarks`: `string`
-> `Routing`: `json.RawMessage`
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| DNS | json.RawMessage | `"dns"` | no | Ignored. Preserved as raw JSON. |
-| Inbounds | json.RawMessage | `"inbounds"` | no | Ignored. Preserved as raw JSON. |
-| Log | json.RawMessage | `"log"` | no | Ignored. Preserved as raw JSON. |
-| Outbounds | []Outbound | `"outbounds"` | yes | List of outbound proxy configurations. |
-| Remarks | string | `"remarks"` | no | Label for this subscription. Used as proxy remarks. |
-| Routing | json.RawMessage | `"routing"` | no | Ignored. Preserved as raw JSON. |
-
-## Outbound Object
-
-> `StreamSettings`: `StreamSettings`
-> `Protocol`: `string`
-> `Tag`: `string`
-> `Settings`: `OutboundSettings`
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| StreamSettings | StreamSettings | `"streamSettings"` | yes | Network and security configuration. |
-| Protocol | string | `"protocol"` | yes | Protocol name. `"vless"` is the primary supported protocol. |
-| Tag | string | `"tag"` | no | Outbound identifier. `"proxy"` is also matched by `ExtractProxies`. |
-| Settings | OutboundSettings | `"settings"` | yes | Protocol-specific settings containing server and user info. |
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| StreamSettings | `streamSettings` | `StreamSettings` | Transport and security settings |
+| Protocol | `protocol` | `string` | Protocol name (e.g. `"vless"`) |
+| Tag | `tag` | `string` | Outbound identifier |
+| Settings | `settings` | `OutboundSettings` | Protocol-specific settings |
 
 ## OutboundSettings
 
-> `Vnext`: `[]VNext`
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Vnext | `vnext` | `[]VNext` | List of vnext server entries (omitempty) |
 
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Vnext | []VNext | `"vnext"` | no | List of vnext server configurations. Empty for non-vless protocols. |
+## VNext
 
-## VNext Object
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Address | `address` | `string` | Server address (hostname or IP) |
+| Users | `users` | `[]User` | User accounts |
+| Port | `port` | `int` | Server port |
 
-> `Address`: `string`
-> `Users`: `[]User`
-> `Port`: `int`
+## User
 
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Address | string | `"address"` | yes | Server address (domain or IP). |
-| Users | []User | `"users"` | yes | List of user credentials. |
-| Port | int | `"port"` | yes | Server port number. |
-
-## User Object
-
-> `Encryption`: `string`
-> `Flow`: `string`
-> `ID`: `string`
-> `Level`: `int`
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Encryption | string | `"encryption"` | yes | Encryption method (typically `"none"` for vless). |
-| Flow | string | `"flow"` | no | XTLS flow control string (e.g. `"xtls-rprx-vision"`). |
-| ID | string | `"id"` | yes | UUID identifying the user. |
-| Level | int | `"level"` | no | User privilege level. |
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Encryption | `encryption` | `string` | Encryption method (typically `"none"`) |
+| Flow | `flow` | `string` | XTLS flow control (omitempty) |
+| ID | `id` | `string` | User UUID |
+| Level | `level` | `int` | User level (omitempty) |
 
 ## StreamSettings
 
-> `RealitySettings`: `*RealitySettings`
-> `TLSSettings`: `*TLSSettings`
-> `TCPSettings`: `*TCPSettings`
-> `WSSettings`: `*WSSettings`
-> `GRPCSettings`: `*GRPCSettings`
-> `HTTPSettings`: `*HTTPSettings`
-> `KCPSettings`: `*KCPSettings`
-> `Network`: `string`
-> `Security`: `string`
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| RealitySettings | *RealitySettings | `"realitySettings"` | no | REALITY TLS configuration. Used when security is `"reality"`. |
-| TLSSettings | *TLSSettings | `"tlsSettings"` | no | Standard TLS configuration. Used when security is `"tls"`. |
-| TCPSettings | *TCPSettings | `"tcpSettings"` | no | TCP transport settings. Used when network is `"tcp"`. |
-| WSSettings | *WSSettings | `"wsSettings"` | no | WebSocket transport settings. Used when network is `"ws"`. |
-| GRPCSettings | *GRPCSettings | `"grpcSettings"` | no | gRPC transport settings. Used when network is `"grpc"`. |
-| HTTPSettings | *HTTPSettings | `"httpSettings"` | no | HTTP/2 transport settings. Used when network is `"h2"`. |
-| KCPSettings | *KCPSettings | `"kcpSettings"` | no | mKCP transport settings. Used when network is `"kcp"`. |
-| Network | string | `"network"` | yes | Transport protocol: `"tcp"`, `"ws"`, `"grpc"`, `"h2"`, `"kcp"`. |
-| Security | string | `"security"` | yes | Security layer: `"reality"`, `"tls"`, `"none"`. |
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| RealitySettings | `realitySettings` | `*RealitySettings` | REALITY TLS config (omitempty) |
+| TLSSettings | `tlsSettings` | `*TLSSettings` | Standard TLS config (omitempty) |
+| TCPSettings | `tcpSettings` | `*TCPSettings` | TCP transport config (omitempty) |
+| WSSettings | `wsSettings` | `*WSSettings` | WebSocket transport config (omitempty) |
+| GRPCSettings | `grpcSettings` | `*GRPCSettings` | gRPC transport config (omitempty) |
+| HTTPSettings | `httpSettings` | `*HTTPSettings` | HTTP/2 transport config (omitempty) |
+| KCPSettings | `kcpSettings` | `*KCPSettings` | mKCP transport config (omitempty) |
+| Network | `network` | `string` | Transport network type (`tcp`, `ws`, `grpc`, `h2`, `kcp`) |
+| Security | `security` | `string` | Security type (`reality`, `tls`, `none`) |
 
 ## RealitySettings
 
-> `PublicKey`: `string`
-> `Fingerprint`: `string`
-> `ServerName`: `string`
-> `ShortID`: `string`
-> `SpiderX`: `string`
-
-Only used when `StreamSettings.Security` is `"reality"`.
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| PublicKey | string | `"publicKey"` | yes | REALITY server public key. |
-| Fingerprint | string | `"fingerprint"` | yes | REALITY TLS fingerprint (e.g. `"chrome"`). |
-| ServerName | string | `"serverName"` | yes | Server name for TLS handshake. |
-| ShortID | string | `"shortId"` | yes | Short ID for REALITY authentication. |
-| SpiderX | string | `"spiderX"` | no | Spider path for desync. Omitted when empty. |
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| PublicKey | `publicKey` | `string` | REALITY server public key |
+| Fingerprint | `fingerprint` | `string` | TLS client fingerprint (e.g. `"chrome"`, `"firefox"`) |
+| ServerName | `serverName` | `string` | SNI server name |
+| ShortID | `shortId` | `string` | REALITY short ID |
+| SpiderX | `spiderX` | `string` | SpiderX path (omitempty) |
 
 ## TLSSettings
 
-> `ServerName`: `string`
-> `Fingerprint`: `string`
-> `ALPN`: `[]string`
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| ServerName | `serverName` | `string` | SNI server name (omitempty) |
+| Fingerprint | `fingerprint` | `string` | TLS client fingerprint (omitempty) |
+| ALPN | `alpn` | `[]string` | ALPN protocol list (omitempty) |
 
-Only used when `StreamSettings.Security` is `"tls"`.
+## TCPSettings
 
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| ServerName | string | `"serverName"` | no | TLS SNI server name. |
-| Fingerprint | string | `"fingerprint"` | no | TLS fingerprint (e.g. `"chrome"`). |
-| ALPN | []string | `"alpn"` | no | Application-Layer Protocol Negotiation values. |
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Header | `header` | `*TCPHeader` | TCP header obfuscation (omitempty) |
 
-## Transport Settings
+## TCPHeader
 
-### TCPSettings
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Type | `type` | `string` | Header type, e.g. `"none"` (omitempty) |
 
-> `Header`: `*TCPHeader`
+## WSSettings
 
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Header | *TCPHeader | `"header"` | no | TCP header obfuscation. |
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Path | `path` | `string` | WebSocket path (omitempty) |
+| Host | `host` | `string` | WebSocket host header (omitempty) |
 
-### TCPHeader
+## GRPCSettings
 
-> `Type`: `string`
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| ServiceName | `serviceName` | `string` | gRPC service name (omitempty) |
 
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Type | string | `"type"` | no | Header type (e.g. `"http"`). |
+## HTTPSettings
 
-### WSSettings
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Path | `path` | `string` | HTTP/2 path (omitempty) |
+| Host | `host` | `[]string` | HTTP/2 host headers (omitempty) |
 
-> `Path`: `string`
-> `Host`: `string`
+## KCPSettings
 
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Path | string | `"path"` | no | WebSocket path. |
-| Host | string | `"host"` | no | WebSocket host header value. |
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| HeaderType | `header` | `*KCPHeader` | mKCP header obfuscation (omitempty) |
+| Seed | `seed` | `string` | mKCP seed (omitempty) |
 
-### GRPCSettings
+## KCPHeader
 
-> `ServiceName`: `string`
+| Go Field | JSON Key | Go Type | Description |
+|----------|----------|---------|-------------|
+| Type | `type` | `string` | Header type, e.g. `"none"` (omitempty) |
 
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| ServiceName | string | `"serviceName"` | no | gRPC service name. |
-
-### HTTPSettings
-
-> `Path`: `string`
-> `Host`: `[]string`
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Path | string | `"path"` | no | HTTP/2 path. |
-| Host | []string | `"host"` | no | HTTP/2 host header values. |
-
-### KCPSettings
-
-> `HeaderType`: `*KCPHeader`
-> `Seed`: `string`
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| HeaderType | *KCPHeader | `"header"` | no | KCP header obfuscation. |
-| Seed | string | `"seed"` | no | KCP seed for obfuscation. |
-
-### KCPHeader
-
-> `Type`: `string`
-
-| Name | Type | JSON | Required | Description |
-|------|------|------|----------|-------------|
-| Type | string | `"type"` | no | KCP header type (e.g. `"none"`). |
-
-## Minimal Valid Example
+## Minimal Valid JSON
 
 ```json
 [
   {
-    "remarks": "my-subscription",
+    "remarks": "My Proxy",
     "outbounds": [
       {
         "protocol": "vless",
         "tag": "proxy",
-        "streamSettings": {
-          "network": "tcp",
-          "security": "reality",
-          "realitySettings": {
-            "publicKey": "AAAA",
-            "fingerprint": "chrome",
-            "serverName": "example.com",
-            "shortId": "abcd"
-          }
-        },
         "settings": {
           "vnext": [
             {
@@ -584,302 +965,250 @@ Only used when `StreamSettings.Security` is `"tls"`.
               "port": 443,
               "users": [
                 {
-                  "encryption": "none",
-                  "id": "00000000-0000-0000-0000-000000000000"
+                  "id": "uuid-here",
+                  "encryption": "none"
                 }
               ]
             }
           ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "security": "none"
         }
       }
     ]
   }
 ]
 ```
+
+Top-level fields `dns`, `inbounds`, `log`, and `routing` may be omitted — they are stored as `json.RawMessage` and never validated.
 ---
 url: /vless-uri
 ---
 # vless:// URI Format
 
-## URI Structure
+## Structure
 
 ```
 vless://{uuid}@{address}:{port}?{params}#{fragment}
 ```
 
-| Part | Description |
-|------|-------------|
-| uuid | User UUID from `User.ID` |
-| address | Server address from `VNext.Address` |
-| port | Server port from `VNext.Port` |
-| params | Query parameters (see sections below) |
-| fragment | URL-encoded remarks from `Subscription.Remarks` |
+| Component | Source | Description |
+|-----------|--------|-------------|
+| uuid | `User.ID` | First user UUID from first vnext entry |
+| address | `VNext.Address` | Server hostname or IP |
+| port | `VNext.Port` | Server port number |
+| params | Various | Query parameters (see below) |
+| fragment | `VLESSProxy.Remarks()` | URL-path-escaped remarks; omitted when empty |
 
-## Required Parameters
+## Query Parameters
 
-These parameters are always present in the URI.
+### Always Present
 
-| Name | Value | Description |
-|------|-------|-------------|
-| type | StreamSettings.Network | Transport protocol: `tcp`, `ws`, `grpc`, `h2`, `kcp` |
-| encryption | User.Encryption | Encryption method (typically `none`) |
-| security | StreamSettings.Security | Security layer: `reality`, `tls`, `none` |
+| Param | Value | Source |
+|-------|-------|--------|
+| type | `StreamSettings.Network` | Transport type |
+| encryption | `User.Encryption` | Encryption method |
+| security | `StreamSettings.Security` | Security type |
 
-## REALITY Parameters
+### REALITY (`security=reality`)
 
-Present when `security == "reality"`.
+| Param | Value | Source |
+|-------|-------|--------|
+| pbk | `RealitySettings.PublicKey` | Required |
+| fp | `RealitySettings.Fingerprint` | Required |
+| sni | `RealitySettings.ServerName` | Required |
+| sid | `RealitySettings.ShortID` | Required |
+| spx | `RealitySettings.SpiderX` | Optional — only included when non-empty |
 
-| Name | Value | Required | Description |
-|------|-------|----------|-------------|
-| pbk | RealitySettings.PublicKey | yes | REALITY public key |
-| fp | RealitySettings.Fingerprint | yes | TLS fingerprint |
-| sni | RealitySettings.ServerName | yes | Server name for TLS handshake |
-| sid | RealitySettings.ShortID | yes | Short ID |
-| spx | RealitySettings.SpiderX | no | Spider path. Omitted when empty. |
+### TLS (`security=tls`)
 
-## TLS Parameters
+| Param | Value | Source |
+|-------|-------|--------|
+| sni | `TLSSettings.ServerName` | Optional — only included when non-empty |
+| alpn | `strings.Join(TLSSettings.ALPN, ",")` | Optional — only included when ALPN has elements |
+| fp | `TLSSettings.Fingerprint` | Optional — only included when non-empty |
 
-Present when `security == "tls"`. Each parameter is only included when non-empty.
+### Transport-Specific
 
-| Name | Value | Required | Description |
-|------|-------|----------|-------------|
-| sni | TLSSettings.ServerName | no | Server name for TLS handshake |
-| alpn | TLSSettings.ALPN (comma-joined) | no | ALPN protocol values |
-| fp | TLSSettings.Fingerprint | no | TLS fingerprint |
+| Transport | Params | Source |
+|-----------|--------|--------|
+| ws | `path`, `host` | `WSSettings.Path`, `WSSettings.Host` — included when non-empty |
+| grpc | `serviceName` | `GRPCSettings.ServiceName` — included when non-empty |
+| h2 | `path`, `host` | `HTTPSettings.Path`, `HTTPSettings.Host` (comma-joined) — included when non-empty/non-nil |
+| kcp | `type` (seed), `headerType` | `KCPSettings.Seed`, `KCPSettings.HeaderType.Type` — included when non-empty |
+| tcp | none | No additional params |
 
-## Transport Parameters
+### Flow
 
-Additional query parameters based on the `type` value.
-
-### WebSocket (type=ws)
-
-| Name | Value | Description |
-|------|-------|-------------|
-| path | WSSettings.Path | WebSocket path |
-| host | WSSettings.Host | WebSocket host header |
-
-### gRPC (type=grpc)
-
-| Name | Value | Description |
-|------|-------|-------------|
-| serviceName | GRPCSettings.ServiceName | gRPC service name |
-
-### HTTP/2 (type=h2)
-
-| Name | Value | Description |
-|------|-------|-------------|
-| path | HTTPSettings.Path | HTTP/2 path |
-| host | HTTPSettings.Host (comma-joined) | HTTP/2 host values |
-
-### mKCP (type=kcp)
-
-| Name | Value | Description |
-|------|-------|-------------|
-| type | KCPSettings.Seed | Seed value (overwrites the `type` parameter) |
-| headerType | KCPHeader.Type | Header obfuscation type |
-
-### TCP (type=tcp)
-
-No additional query parameters.
-
-## Common Parameters
-
-| Name | Value | Description |
-|------|-------|-------------|
-| flow | User.Flow | XTLS flow control. Appended at the end if present. |
+| Param | Value | Source |
+|-------|-------|--------|
+| flow | `User.Flow` | Optional — appended last when non-empty |
 
 ## Fragment
 
-The fragment portion after `#` contains the subscription remarks, URL-encoded using `url.PathEscape`:
-
-```
-vless://...#my%20subscription
-```
-
-If remarks is empty, no `#` fragment is appended.
+Uses `url.PathEscape` (not `url.QueryEscape`). Omitted entirely (no `#`) when remarks is empty.
 
 ## Gotchas
 
-- For KCP transport, the `type` query parameter is overwritten with the seed value (not the network type). This is a known quirk.
-- All parameter values are URL-encoded using `url.QueryEscape`.
-- The fragment (remarks) uses `url.PathEscape` (not `url.QueryEscape`).
-- SpiderX (`spx`) is only included when non-empty.
-- TLS sni, alpn, fp are only included when non-empty.
-- If remarks is empty, no fragment is appended.
+- **KCP overwrites `type` param**: When network is `kcp` and seed is set, a second `type=` parameter is appended with the seed value. The URI will contain two `type` params: the first from `network` (value `kcp`), the second from `KCPSettings.Seed`. Example: `...?type=kcp&encryption=none&security=none&type=mykcpseed&headerType=none`.
+- **Encoding difference**: All query parameter values use `url.QueryEscape`. The fragment uses `url.PathEscape`. These produce different output for the same input (e.g. space becomes `+` in query params but `%20` in path-escaped fragment).
+- **SpiderX is conditional**: The `spx` param only appears when `RealitySettings.SpiderX` is non-empty.
+- **TLS params are conditional**: `sni`, `alpn`, and `fp` under TLS are each independently conditional on being non-empty.
+- **H2 host is multi-value**: `HTTPSettings.Host` is a `[]string` joined with commas before encoding.
 
-## Complete Examples
+## Validation Errors
 
-### TCP + REALITY (with flow, spiderX)
+`VLESSURI` returns an error (not a partial URI) when:
+- No vnext entries in settings (`"no vnext in outbound settings"`)
+- Address is empty (`"missing address"`)
+- Port is zero (`"missing port"`)
+- No users or user ID is empty (`"missing user id"`)
+
+## Examples
+
+### TCP + REALITY
 
 ```
-vless://uuid@server:443?type=tcp&encryption=none&security=reality&pbk=pubkey&fp=chrome&sni=example.com&sid=abcd&spx=%2F&flow=xtls-rprx-vision#my%20proxy
+vless://test-uuid-1234@example.com:443?type=tcp&encryption=none&security=reality&pbk=pub_key_value&fp=firefox&sni=sni.example.com&sid=abcd1234&spx=%2F&flow=xtls-rprx-vision
 ```
 
-### TCP + TLS (with ALPN)
+### TCP + TLS
 
 ```
-vless://uuid@server:443?type=tcp&encryption=none&security=tls&sni=example.com&alpn=h2%2Chttp%2F1.1&fp=chrome#my%20proxy
+vless://uuid-tls@tls.example.com:8443?type=tcp&encryption=none&security=tls&sni=tls.example.com&alpn=h2%2Chttp%2F1.1&fp=chrome
 ```
 
 ### WS + TLS
 
 ```
-vless://uuid@server:443?type=ws&encryption=none&security=tls&sni=example.com&path=%2Fws&host=example.com#my%20proxy
+vless://uuid-ws@ws.example.com:443?type=ws&encryption=none&security=tls&sni=ws.example.com&path=%2Fwebsocket-path&host=ws-host.example.com
 ```
 
 ### gRPC + TLS
 
 ```
-vless://uuid@server:443?type=grpc&encryption=none&security=tls&sni=example.com&serviceName=myService#my%20proxy
+vless://uuid-grpc@grpc.example.com:443?type=grpc&encryption=none&security=tls&sni=grpc.example.com&serviceName=grpc-service
 ```
 
 ### H2 + TLS
 
 ```
-vless://uuid@server:443?type=h2&encryption=none&security=tls&sni=example.com&path=%2F&host=example.com#my%20proxy
+vless://uuid-h2@h2.example.com:443?type=h2&encryption=none&security=tls&sni=h2.example.com&path=%2Fh2-path&host=h2a.example.com%2Ch2b.example.com
 ```
 
 ### KCP + none
 
 ```
-vless://uuid@server:443?type=myseed&encryption=none&security=none&headerType=none#my%20proxy
+vless://uuid-kcp@kcp.example.com:443?type=kcp&encryption=none&security=none&type=mykcpseed&headerType=none
 ```
 
-### TCP + none (minimal)
+Note the duplicate `type` param — first `kcp` (from network), second `mykcpseed` (from seed).
+
+### TCP + none
 
 ```
-vless://uuid@server:443?type=tcp&encryption=none&security=none#my%20proxy
-```
----
-url: /podkop
----
-# Podkop Output Format
-
-## What is Podkop
-
-Podkop is an output formatter that generates uci shell commands for the podkop OpenWrt package to configure proxy URL lists. It converts a slice of proxy objects into a sequence of `uci` commands that clear and repopulate the `urltest_proxy_links` list, then restarts the podkop service.
-
-## CLI Usage
-
-```shell
-goxsub -format podkop <url>
-goxsub -format podkop -podkop-section custom <url>
+vless://uuid-plain@plain.example.com:80?type=tcp&encryption=none&security=none
 ```
 
-| Flag | Default | Required | Description |
-|------|---------|----------|-------------|
-| `-format` | `uri` | No | Must be `podkop` to activate this formatter |
-| `-podkop-section` | `main` | No | UCI section name; non-default values require `-format podkop` |
-
-## Library Usage
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-	"os"
-
-	goxsub "github.com/Arsolitt/goxsub"
-)
-
-func main() {
-	data, err := os.ReadFile("subscription.json")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	subs, err := goxsub.ParseSubscription(data)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	proxies := goxsub.ExtractProxies(subs)
-
-	output, err := goxsub.Podkop(proxies, "main")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println(output)
-}
-```
-
-## Output Structure
-
-The output is a multi-line shell script consisting of three parts:
-
-1. **Clear command** — `uci del podkop.<section>.urltest_proxy_links` removes all existing entries from the list.
-2. **Add commands** — one `uci add_list podkop.<section>.urltest_proxy_links='<uri>'` line per proxy, appending each vless:// URI to the list.
-3. **Restart command** — `service podkop restart` applies the changes.
-
-## Example Output
-
-Given two proxies in section "main":
+### With remarks
 
 ```
-uci del podkop.main.urltest_proxy_links
-uci add_list podkop.main.urltest_proxy_links='vless://a1b2c3d4@example.com:443?type=tcp&encryption=none&security=none#Server A'
-uci add_list podkop.main.urltest_proxy_links='vless://e5f6g7h8@example.com:8443?type=tcp&encryption=none&security=none#Server B'
-service podkop restart
+vless://uuid@example.com:443?type=tcp&encryption=none&security=none#My%20Proxy
 ```
 
-## Empty Input
-
-When the proxy list is empty, no `uci add_list` lines are generated. The output contains only the clear and restart commands:
-
-```
-uci del podkop.main.urltest_proxy_links
-service podkop restart
-```
-
-## Section Name
-
-The section name defaults to `"main"` and can be customized with the `-podkop-section` CLI flag. A non-default section value is only valid when `-format podkop` is also set; otherwise the CLI returns an error.
+Fragment uses `url.PathEscape`: space becomes `%20`.
 ---
 url: /transports
 ---
 # Transports and Security
 
-## Supported Transports
+## Transport Types
 
-| Transport | `network` value | Additional Settings | URI Parameters |
-|-----------|----------------|-------------------|----------------|
-| TCP | `tcp` | TCPSettings (header type, optional) | None |
-| WebSocket | `ws` | WSSettings (path, host) | `path`, `host` |
-| gRPC | `grpc` | GRPCSettings (serviceName) | `serviceName` |
-| HTTP/2 | `h2` | HTTPSettings (path, host[]) | `path`, `host` |
-| mKCP | `kcp` | KCPSettings (seed, headerType) | `type` (=seed), `headerType` |
+| Network | JSON Key | Settings Struct | URI `type` Param | Additional URI Params |
+|---------|----------|-----------------|-------------------|----------------------|
+| TCP | `network: "tcp"` | `TCPSettings` | `type=tcp` | None |
+| WebSocket | `network: "ws"` | `WSSettings` | `type=ws` | `path`, `host` |
+| gRPC | `network: "grpc"` | `GRPCSettings` | `type=grpc` | `serviceName` |
+| HTTP/2 | `network: "h2"` | `HTTPSettings` | `type=h2` | `path`, `host` (comma-joined) |
+| mKCP | `network: "kcp"` | `KCPSettings` | `type=kcp` (then `type={seed}`, `headerType`) | `type` (seed), `headerType` |
 
-## Supported Security
+### Transport Details
 
-| Security | `security` value | Settings Object | URI Parameters |
-|----------|-----------------|-----------------|----------------|
-| None | `none` | None | None |
-| TLS | `tls` | TLSSettings (serverName, alpn[], fingerprint) | `sni`, `alpn`, `fp` |
-| REALITY | `reality` | RealitySettings (publicKey, fingerprint, serverName, shortId, spiderX) | `pbk`, `fp`, `sni`, `sid`, `spx` |
+**TCP** (`network: "tcp"`):
+- Settings key: `tcpSettings`
+- `TCPSettings.Header` is a pointer to `TCPHeader` with optional `Type` field
+- No additional URI parameters are generated from TCP settings
+
+**WebSocket** (`network: "ws"`):
+- Settings key: `wsSettings`
+- `WSSettings.Path` → URI param `path` (when non-empty)
+- `WSSettings.Host` → URI param `host` (when non-empty)
+
+**gRPC** (`network: "grpc"`):
+- Settings key: `grpcSettings`
+- `GRPCSettings.ServiceName` → URI param `serviceName` (when non-empty)
+
+**HTTP/2** (`network: "h2"`):
+- Settings key: `httpSettings`
+- `HTTPSettings.Path` → URI param `path` (when non-empty)
+- `HTTPSettings.Host` is `[]string` → URI param `host` (comma-joined, when non-nil)
+
+**mKCP** (`network: "kcp"`):
+- Settings key: `kcpSettings`
+- `KCPSettings.Seed` → URI param `type` (overwrites the initial `type=kcp`, when non-empty)
+- `KCPSettings.HeaderType.Type` → URI param `headerType` (when non-empty)
+
+## Security Types
+
+| Security | JSON Key | Settings Struct | URI Params |
+|----------|----------|-----------------|------------|
+| none | `security: "none"` | (none) | None |
+| TLS | `security: "tls"` | `TLSSettings` | `sni`, `alpn`, `fp` |
+| REALITY | `security: "reality"` | `RealitySettings` | `pbk`, `fp`, `sni`, `sid`, `spx` |
+
+### Security Details
+
+**none** (`security: "none"`):
+- No security settings struct
+- No additional URI parameters
+
+**TLS** (`security: "tls"`):
+- Settings key: `tlsSettings`
+- `TLSSettings.ServerName` → `sni` (conditional, when non-empty)
+- `TLSSettings.ALPN` → `alpn` (conditional, comma-joined when non-nil/non-empty)
+- `TLSSettings.Fingerprint` → `fp` (conditional, when non-empty)
+- TLS params are only added when their source values are non-empty
+
+**REALITY** (`security: "reality"`):
+- Settings key: `realitySettings`
+- `RealitySettings.PublicKey` → `pbk` (required)
+- `RealitySettings.Fingerprint` → `fp` (required)
+- `RealitySettings.ServerName` → `sni` (required)
+- `RealitySettings.ShortID` → `sid` (required)
+- `RealitySettings.SpiderX` → `spx` (conditional, only when non-empty)
 
 ## Common Combinations
 
-| Combination | URI Parameters |
-|-------------|----------------|
-| TCP + REALITY | `type`, `encryption`, `security`, `pbk`, `fp`, `sni`, `sid`, `spx`?, `flow`? |
-| TCP + TLS | `type`, `encryption`, `security`, `sni`?, `alpn`?, `fp`?, `flow`? |
-| WS + TLS | `type`, `encryption`, `security`, `sni`?, `path`?, `host`? |
-| gRPC + TLS | `type`, `encryption`, `security`, `sni`?, `serviceName` |
-| H2 + TLS | `type`, `encryption`, `security`, `sni`?, `path`?, `host`? |
-| KCP + none | `type`, `encryption`, `security`, `type` (=seed), `headerType`? |
-
-Parameters marked with `?` are omitted when their value is empty.
+| Transport | Security | Typical Use Case |
+|-----------|----------|-----------------|
+| TCP | REALITY | Direct connection with REALITY TLS |
+| TCP | TLS | Direct connection with standard TLS |
+| TCP | none | Plain TCP (no encryption) |
+| WebSocket | TLS | WebSocket over TLS |
+| gRPC | TLS | gRPC over TLS |
+| HTTP/2 | TLS | HTTP/2 transport over TLS |
+| mKCP | none | mKCP (UDP-based) without TLS |
 
 ## Gotchas
 
-- KCP transport overwrites the `type` URI parameter with the seed value instead of the network type "kcp".
-- SpiderX (`spx`) is only included in REALITY URIs when non-empty.
-- TLS `sni`, `alpn`, `fp` are only included when non-empty.
-- All parameter values are URL-encoded (`url.QueryEscape`).
-- The fragment (remarks) uses `url.PathEscape`.
-- `TCPSettings.Header` is not mapped to any URI parameter.
-- `ExtractProxies` matches `Protocol == "vless"` OR `Tag == "proxy"` (OR condition, not AND).
-- The `remark` field on `VLESSProxy` comes from `Subscription.Remarks`, not from `Outbound.Tag`.
+- **KCP `type` param collision**: The mKCP transport always emits `type=kcp` from the network field. If `KCPSettings.Seed` is set, a second `type=` param is appended with the seed value. The resulting URI has two `type` query parameters. This is by design — consuming applications use the last `type` value.
+
+- **Conditional params**: TLS `sni`, `alpn`, `fp` and REALITY `spx` are only included when non-empty. Required REALITY params (`pbk`, `fp`, `sni`, `sid`) are always included when REALITY settings are present.
+
+- **H2 host is multi-value**: `HTTPSettings.Host` is a `[]string`. In the URI, all values are comma-joined then query-escaped. This differs from WebSocket where `Host` is a single `string`.
+
+- **Settings pointer semantics**: All transport and security settings are Go pointer types with `omitempty`. A nil pointer means the setting is absent from JSON. A non-nil pointer with zero-value fields means the setting was present but empty.
+
+- **sing-box output ignores transports**: The `Singbox` function only maps security (REALITY/TLS) to the sing-box outbound JSON. Transport-specific settings (WebSocket path, gRPC service name, etc.) are not included in the sing-box output. The sing-box outbound only contains `type`, `tag`, `server`, `server_port`, `uuid`, `flow`, `domain_resolver`, and optional `tls`.
