@@ -33,3 +33,6 @@ var ToURI = protocol.ToURI
 var ToVLESSURI = protocol.ToVLESSURI
 var VLESSURI = protocol.VLESSURI
 var Podkop = format.Podkop
+var Singbox = format.Singbox
+
+type SingboxConfig = format.SingboxConfig
