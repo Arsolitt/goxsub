@@ -9,7 +9,7 @@
 [![Codecov](https://img.shields.io/codecov/c/github/Arsolitt/goxsub?token=YOUR_CODECOV_TOKEN&logo=codecov&logoColor=white)](https://codecov.io/gh/Arsolitt/goxsub)
 [![golangci-lint](https://img.shields.io/badge/linting-golangci--lint-00B4D8?logo=go&logoColor=white)](https://golangci-lint.run/)
 
-**Go library and CLI for parsing xray core JSON subscriptions and converting vless outbounds to vless:// URIs.**
+**Go library and CLI for parsing xray core JSON subscriptions and converting vless outbounds to vless:// URIs, sing-box outbounds, or podkop UCI commands.**
 
 Standard library only. No third-party dependencies.
 
@@ -36,8 +36,12 @@ goxsub [flags] <subscription-url>
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-format` | `uri` | Output format: `uri` or `podkop` |
+| `-format` | `uri` | Output format: `uri`, `podkop`, or `singbox` |
 | `-podkop-section` | `main` | Podkop UCI section name |
+| `-keep-remark` | `true` | Keep original remark or replace with sequential number |
+| `-singbox-dns-resolver` | `dns-local` | sing-box domain_resolver value |
+| `-singbox-outbound-prefix` | — | sing-box outbound tag prefix |
+| `-singbox-outbound-suffix` | — | sing-box outbound tag suffix |
 | `-exclude-by-remark` | — | Exclude proxies by remark glob, case-insensitive (repeatable) |
 
 ## Library Usage
@@ -59,10 +63,10 @@ cmd/goxsub/    CLI binary
 sub/           JSON subscription parsing and types
 proxy/         Proxy extraction, filtering, and Proxy interface
 protocol/      URI conversion (vless://)
-format/        Output formatters (podkop UCI commands)
+format/        Output formatters (podkop UCI commands, sing-box outbound JSON)
 ```
 
-Data flow: `JSON → ParseSubscription → ExtractProxies → FilterByRemark → ToURI/Podkop`
+Data flow: `JSON → ParseSubscription → ExtractProxies → FilterByRemark → ToURI/Podkop/Singbox`
 
 ## Using with AI Assistants
 
