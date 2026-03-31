@@ -18,3 +18,6 @@ type VLESSProxy struct {
 func (v *VLESSProxy) Protocol() string { return vlessProtocol }
 func (v *VLESSProxy) Tag() string      { return v.Outbound.Tag }
 func (v *VLESSProxy) Remarks() string  { return v.remark }
+
+// SetRemarks updates the proxy remark.
+func (v *VLESSProxy) SetRemarks(r string) { v.remark = r }
