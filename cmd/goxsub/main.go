@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	goxsub "github.com/Arsolitt/goxsub"
@@ -28,8 +29,12 @@ func main() {
 
 //nolint:funlen,gocognit
 func run() int {
-	format := flag.String("format", "uri", "output format: uri, podkop")
+	formatFlag := flag.String("format", "uri", "output format: uri, podkop, singbox")
 	podkopSection := flag.String("podkop-section", "main", "podkop uci section name")
+	singboxDNSResolver := flag.String("singbox-dns-resolver", "dns-local", "sing-box domain_resolver value")
+	singboxOutboundPrefix := flag.String("singbox-outbound-prefix", "", "sing-box outbound tag prefix")
+	singboxOutboundSuffix := flag.String("singbox-outbound-suffix", "", "sing-box outbound tag suffix")
+	keepRemark := flag.Bool("keep-remark", true, "keep original remark or replace with sequential number")
 	var excludePatterns stringSlice
 	flag.Var(
 		&excludePatterns,
@@ -38,8 +43,14 @@ func run() int {
 	)
 	flag.Parse()
 
-	if *format != "podkop" && flag.Lookup("podkop-section").DefValue != *podkopSection {
+	if *formatFlag != "podkop" && flag.Lookup("podkop-section").DefValue != *podkopSection {
 		fmt.Fprintf(os.Stderr, "error: --podkop-section can only be used with --format podkop\n")
+		return 1
+	}
+
+	if *formatFlag != "singbox" && (flag.Lookup("singbox-dns-resolver").DefValue != *singboxDNSResolver ||
+		*singboxOutboundPrefix != "" || *singboxOutboundSuffix != "") {
+		fmt.Fprintf(os.Stderr, "error: --singbox-* flags can only be used with --format singbox\n")
 		return 1
 	}
 
@@ -96,7 +107,15 @@ func run() int {
 	proxies := goxsub.ExtractProxies(subs)
 	proxies = goxsub.FilterByRemark(proxies, excludePatterns)
 
-	switch *format {
+	if !*keepRemark {
+		for i, p := range proxies {
+			if vp, ok := p.(*goxsub.VLESSProxy); ok {
+				vp.SetRemarks(strconv.Itoa(i + 1))
+			}
+		}
+	}
+
+	switch *formatFlag {
 	case "podkop":
 		lines, err := goxsub.Podkop(proxies, *podkopSection)
 		if err != nil {
@@ -105,6 +124,21 @@ func run() int {
 		}
 		for _, line := range lines {
 			fmt.Println(line)
+		}
+	case "singbox":
+		cfg := goxsub.SingboxConfig{
+			OutboundPrefix: *singboxOutboundPrefix,
+			OutboundSuffix: *singboxOutboundSuffix,
+			KeepRemark:     *keepRemark,
+			DNSResolver:    *singboxDNSResolver,
+		}
+		lines, err := goxsub.Singbox(proxies, cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return 1
+		}
+		for _, line := range lines {
+			fmt.Println(line + ",")
 		}
 	default:
 		for _, p := range proxies {
