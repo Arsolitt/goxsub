@@ -1,6 +1,6 @@
 ## Project Overview
 
-goxsub — Go library and CLI for parsing xray core JSON subscriptions and converting vless outbounds to vless:// URIs.
+goxsub — Go library and CLI for parsing xray core JSON subscriptions and converting vless outbounds to vless:// URIs, sing-box outbounds, or podkop UCI commands.
 
 Standard library only. No third-party dependencies. Go 1.26.
 
@@ -8,11 +8,11 @@ Standard library only. No third-party dependencies. Go 1.26.
 
 ```
 api.go         Public API surface: re-exports types and functions from subpackages
-cmd/goxsub/    CLI binary: fetches subscription URL, prints vless:// URIs to stdout
+cmd/goxsub/    CLI binary: fetches subscription URL, prints vless:// URIs, sing-box JSON, or podkop UCI to stdout
 sub/           JSON subscription parsing and types
 proxy/         Proxy extraction and filtering
 protocol/      URI conversion (vless:// and others)
-format/        Output formatters (podkop uci commands)
+format/        Output formatters (podkop uci commands, sing-box outbound JSON)
 ```
 
 - `sub/types.go` — JSON models (Subscription, Outbound, StreamSettings, RealitySettings, etc.)
@@ -21,7 +21,8 @@ format/        Output formatters (podkop uci commands)
 - `proxy/extract.go` — `ExtractProxies([]Subscription) []Proxy`
 - `proxy/filter.go` — `FilterByRemark([]Proxy, []string) []Proxy`
 - `protocol/vless.go` — `VLESSURI(*VLESSProxy) (string, error)`, `ToVLESSURI(Proxy) (string, error)`, `ToURI(Proxy) (string, error)`
-- `format/podkop.go` — `Podkop([]Proxy, string) (string, error)`
+- `format/podkop.go` — `Podkop([]Proxy, string) ([]string, error)`
+- `format/singbox.go` — `Singbox([]Proxy, SingboxConfig) ([]string, error)`, `SingboxConfig` struct
 
 `api.go` re-exports all public types and functions for convenience (`import goxsub "github.com/Arsolitt/goxsub"`).
 
