@@ -53,21 +53,20 @@ func TestPodkop(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	lines := strings.Split(result, "\n")
-	if len(lines) != 4 {
-		t.Fatalf("expected 4 lines, got %d", len(lines))
+	if len(result) != 4 {
+		t.Fatalf("expected 4 lines, got %d", len(result))
 	}
-	if lines[0] != "uci del podkop.main.urltest_proxy_links" {
-		t.Errorf("first line mismatch:\ngot:      %s\nexpected: uci del podkop.main.urltest_proxy_links", lines[0])
+	if result[0] != "uci del podkop.main.urltest_proxy_links" {
+		t.Errorf("first line mismatch:\ngot:      %s\nexpected: uci del podkop.main.urltest_proxy_links", result[0])
 	}
-	if !strings.HasPrefix(lines[1], "uci add_list podkop.main.urltest_proxy_links='vless://uuid-a@") {
-		t.Errorf("second line mismatch:\ngot: %s", lines[1])
+	if !strings.HasPrefix(result[1], "uci add_list podkop.main.urltest_proxy_links='vless://uuid-a@") {
+		t.Errorf("second line mismatch:\ngot: %s", result[1])
 	}
-	if !strings.HasPrefix(lines[2], "uci add_list podkop.main.urltest_proxy_links='vless://uuid-b@") {
-		t.Errorf("third line mismatch:\ngot: %s", lines[2])
+	if !strings.HasPrefix(result[2], "uci add_list podkop.main.urltest_proxy_links='vless://uuid-b@") {
+		t.Errorf("third line mismatch:\ngot: %s", result[2])
 	}
-	if lines[3] != "service podkop restart" {
-		t.Errorf("last line mismatch:\ngot:      %s\nexpected: service podkop restart", lines[3])
+	if result[3] != "service podkop restart" {
+		t.Errorf("last line mismatch:\ngot:      %s\nexpected: service podkop restart", result[3])
 	}
 }
 
@@ -100,9 +99,12 @@ func TestPodkop_CustomSection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "uci del podkop.backup.urltest_proxy_links\nuci add_list podkop.backup.urltest_proxy_links='vless://uuid-c@c.example.com:443?type=tcp&encryption=none&security=none#S'\nservice podkop restart"
-	if result != expected {
-		t.Errorf("result mismatch:\ngot:      %s\nexpected: %s", result, expected)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(result))
+	}
+	expected := "uci add_list podkop.backup.urltest_proxy_links='vless://uuid-c@c.example.com:443?type=tcp&encryption=none&security=none#S'"
+	if result[1] != expected {
+		t.Errorf("second line mismatch:\ngot:      %s\nexpected: %s", result[1], expected)
 	}
 }
 
@@ -111,9 +113,14 @@ func TestPodkop_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := "uci del podkop.main.urltest_proxy_links\nservice podkop restart"
-	if result != expected {
-		t.Errorf("result mismatch:\ngot:      %s\nexpected: %s", result, expected)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(result))
+	}
+	if result[0] != "uci del podkop.main.urltest_proxy_links" {
+		t.Errorf("first line mismatch:\ngot:      %s\nexpected: uci del podkop.main.urltest_proxy_links", result[0])
+	}
+	if result[1] != "service podkop restart" {
+		t.Errorf("last line mismatch:\ngot:      %s\nexpected: service podkop restart", result[1])
 	}
 }
 

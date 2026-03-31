@@ -26,7 +26,7 @@ func main() {
 	os.Exit(run())
 }
 
-//nolint:funlen
+//nolint:funlen,gocognit
 func run() int {
 	format := flag.String("format", "uri", "output format: uri, podkop")
 	podkopSection := flag.String("podkop-section", "main", "podkop uci section name")
@@ -98,12 +98,14 @@ func run() int {
 
 	switch *format {
 	case "podkop":
-		output, err := goxsub.Podkop(proxies, *podkopSection)
+		lines, err := goxsub.Podkop(proxies, *podkopSection)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			return 1
 		}
-		fmt.Println(output)
+		for _, line := range lines {
+			fmt.Println(line)
+		}
 	default:
 		for _, p := range proxies {
 			uri, err := goxsub.ToURI(p)
