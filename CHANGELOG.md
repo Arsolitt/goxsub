@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0](https://github.com/Arsolitt/goxsub/compare/v1.0.0...v1.1.0) (2026-03-31)
+
+
+### Features
+
+* add SetRemarks method to VLESSProxy ([44f535c](https://github.com/Arsolitt/goxsub/commit/44f535c3940c9d956284ca9150a3aeb9a5086688))
+* add sing-box format and --keep-remark, --singbox-* flags to CLI ([3f8851c](https://github.com/Arsolitt/goxsub/commit/3f8851c4f62c0662da4176a469ec39cd1622f194))
+* add sing-box outbound formatter ([6561cff](https://github.com/Arsolitt/goxsub/commit/6561cff5a04c6d7c3d2e72082d3369d85c590e03))
+* change Podkop return type from string to []string ([0f2ea26](https://github.com/Arsolitt/goxsub/commit/0f2ea2692f521550481049e9a6a8a80f5fbf0a38))
+
 ## 1.0.0 (2026-03-29)
 
 
